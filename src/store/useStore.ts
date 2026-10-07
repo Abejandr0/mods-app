@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { MotorcycleBase, Modifications, TireSize } from '../engine/types';
+import type { MotorcycleBase, Modifications, TireSize } from '../engine/types';
 import bikesData from '../data/bikes.json';
 
 interface ModSimState {

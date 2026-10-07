@@ -1,4 +1,4 @@
-import { TireSize } from './types';
+import type { TireSize } from './types';
 
 // Convierte pulgadas a milímetros
 export const INCH_TO_MM = 25.4;

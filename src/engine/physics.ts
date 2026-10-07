@@ -1,4 +1,4 @@
-import { TireSize, Transmission, EngineSpecs } from './types';
+import type { TireSize, Transmission, EngineSpecs } from './types';
 import { calculateTireCircumference } from './tires';
 
 /**
