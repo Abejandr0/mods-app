@@ -1,5 +1,5 @@
-import { contextBridge as e, ipcRenderer as t } from "electron";
+import { contextBridge, ipcRenderer } from "electron";
 //#region src/main/preload.ts
-e.exposeInMainWorld("electronAPI", { askCopilot: (e, n) => t.invoke("ask-copilot", e, n) });
+contextBridge.exposeInMainWorld("electronAPI", { askCopilot: (prompt, currentConfig) => ipcRenderer.invoke("ask-copilot", prompt, currentConfig) });
 //#endregion
 export {};

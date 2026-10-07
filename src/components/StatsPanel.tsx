@@ -25,7 +25,8 @@ export function StatsPanel() {
   const modTopSpeeds = useMemo(() => calculateTopSpeedsPerGear(currentTransmission, baseBike.engine, currentRearTire), [currentTransmission, baseBike.engine, currentRearTire]);
 
   const speedometerError = useMemo(() => calculateSpeedometerError(baseBike.rearTire, currentRearTire), [baseBike.rearTire, currentRearTire]);
-  const forceFactor = useMemo(() => calculateRelativeTractionForce(baseBike.rearTire, baseBike.transmission, currentRearTire, currentTransmission, 0), [baseBike, currentRearTire, currentTransmission]);
+  const modifiedBike = { ...baseBike, transmission: currentTransmission, rearTire: currentRearTire };
+  const forceFactor = useMemo(() => calculateRelativeTractionForce(baseBike.rearTire, baseBike.transmission, modifiedBike.rearTire, modifiedBike.transmission), [baseBike, modifiedBike]);
 
   const forceDiffPercent = (forceFactor - 1) * 100;
   const topSpeedBase = baseTopSpeeds[baseTopSpeeds.length - 1];

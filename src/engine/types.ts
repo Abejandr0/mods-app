@@ -1,21 +1,23 @@
 export interface TireSize {
-  width: number;       // ej. 140 (mm)
-  profile: number;     // ej. 70 (%)
-  rim: number;         // ej. 17 (pulgadas)
+  width: number;
+  profile: number;
+  rim: number;
 }
 
 export interface Transmission {
   primaryRatio: number;
-  gearRatios: number[]; // Relaciones de 1ra a Nra marcha
-  sprocket: number;     // Piñón (dientes)
-  chainring: number;    // Catalina (dientes)
+  gearRatios: number[];
+  sprocket: number;
+  chainring: number;
+  chainPitch?: number; // e.g., 520
+  chainLinks?: number;
 }
 
 export interface EngineSpecs {
-  displacement: number; // cc
-  maxPowerHp: number;   // HP
+  displacement: number;
+  maxPowerHp: number;
   maxPowerRpm: number;
-  maxTorqueNm: number;  // Nm
+  maxTorqueNm: number;
   maxTorqueRpm: number;
   redlineRpm: number;
 }
@@ -27,10 +29,12 @@ export interface MotorcycleBase {
   transmission: Transmission;
   rearTire: TireSize;
   frontTire: TireSize;
-  weightKg: number;     // Peso en vacío / Curb weight
+  weightKg: number;
   riderWeightKg: number;
-  dragCoefficient: number; // Cd
-  frontalArea: number;     // m^2
+  dragCoefficient: number;
+  frontalArea: number;
+  centerOfGravityHeightM?: number; // Defaults to 0.6 if missing
+  wheelbaseM?: number; // Defaults to 1.4 if missing
 }
 
 export interface Modifications {
@@ -40,12 +44,57 @@ export interface Modifications {
   chainring?: number;
 }
 
+export interface TopSpeedResult {
+  speedKmh: number;
+  limitedBy: 'rpm' | 'aero';
+}
+
+export interface AccelerationResult {
+  time0To100: number;
+  time0To200m: number;
+  speedAt200m: number;
+  time60To120TopGear: number;
+}
+
+export interface ChainResult {
+  links: number;
+  tensorWarning: boolean;
+  warningMessage?: string;
+}
+
+export interface TireValidationResult {
+  isValid: boolean;
+  clearanceChangeMm: number;
+  rideHeightChangeMm: number;
+  warnings: string[];
+}
+
+export interface CruisingResult {
+  rpmAt100: number;
+  rpmAt120: number;
+  relativeConsumptionPercent: number; 
+}
+
 export interface CalculatedStats {
   rearTireDiameterMm: number;
   finalDriveRatio: number;
   topSpeedPerGearKmh: number[];
-  maxAerodynamicSpeedKmh: number;
-  cruisingRpmAt100: number;
+  effectiveTopSpeed: TopSpeedResult;
+  cruising: CruisingResult;
   speedometerErrorPercent: number;
-  relativeTractionForce: number; // Fuerza de tracción en rueda para aceleración (basado en gearRatio actual) vs base
+  acceleration: AccelerationResult;
+  chain: ChainResult;
+  rearTireValidation: TireValidationResult;
+  frontTireValidation: TireValidationResult;
+}
+
+export interface EngineSimulationResult {
+  baseStats: CalculatedStats;
+  modStats: CalculatedStats;
+  percentageChanges: {
+    effectiveTopSpeed: number;
+    time0To100: number;
+    time0To200m: number;
+    time60To120TopGear: number;
+  };
 }

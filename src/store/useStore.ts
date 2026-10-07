@@ -5,11 +5,13 @@ import bikesData from '../data/bikes.json';
 interface ModSimState {
   baseBike: MotorcycleBase;
   modifications: Modifications;
+  theme: 'light' | 'dark';
   setBaseBike: (bikeId: string) => void;
   updateRearTire: (tire: Partial<TireSize>) => void;
   updateSprocket: (teeth: number) => void;
   updateChainring: (teeth: number) => void;
   resetModifications: () => void;
+  toggleTheme: () => void;
 }
 
 const defaultBike = bikesData[0] as MotorcycleBase;
@@ -17,7 +19,7 @@ const defaultBike = bikesData[0] as MotorcycleBase;
 export const useStore = create<ModSimState>((set) => ({
   baseBike: defaultBike,
   modifications: {},
-
+  theme: 'light',
   setBaseBike: (bikeId) => {
     const bike = (bikesData as MotorcycleBase[]).find((b) => b.id === bikeId) || defaultBike;
     set({ baseBike: bike, modifications: {} });
@@ -47,5 +49,6 @@ export const useStore = create<ModSimState>((set) => ({
     }
   })),
 
-  resetModifications: () => set({ modifications: {} })
+  resetModifications: () => set({ modifications: {} }),
+  toggleTheme: () => set((state) => ({ theme: state.theme === 'light' ? 'dark' : 'light' })),
 }));
