@@ -1,0 +1,66 @@
+[
+  {
+    "id": "mt07",
+    "name": "Yamaha MT-07",
+    "engine": {
+      "displacement": 689,
+      "maxPowerHp": 73.4,
+      "maxPowerRpm": 8750,
+      "maxTorqueNm": 67,
+      "maxTorqueRpm": 6500,
+      "redlineRpm": 10500
+    },
+    "transmission": {
+      "primaryRatio": 1.925,
+      "gearRatios": [2.846, 2.125, 1.631, 1.300, 1.090, 0.964],
+      "sprocket": 16,
+      "chainring": 43
+    },
+    "rearTire": {
+      "width": 180,
+      "profile": 55,
+      "rim": 17
+    },
+    "frontTire": {
+      "width": 120,
+      "profile": 70,
+      "rim": 17
+    },
+    "weightKg": 184,
+    "riderWeightKg": 80,
+    "dragCoefficient": 0.6,
+    "frontalArea": 0.7
+  },
+  {
+    "id": "ninja400",
+    "name": "Kawasaki Ninja 400",
+    "engine": {
+      "displacement": 399,
+      "maxPowerHp": 49,
+      "maxPowerRpm": 10000,
+      "maxTorqueNm": 38,
+      "maxTorqueRpm": 8000,
+      "redlineRpm": 12000
+    },
+    "transmission": {
+      "primaryRatio": 2.218,
+      "gearRatios": [2.928, 2.055, 1.619, 1.333, 1.153, 1.037],
+      "sprocket": 14,
+      "chainring": 41
+    },
+    "rearTire": {
+      "width": 150,
+      "profile": 60,
+      "rim": 17
+    },
+    "frontTire": {
+      "width": 110,
+      "profile": 70,
+      "rim": 17
+    },
+    "weightKg": 168,
+    "riderWeightKg": 80,
+    "dragCoefficient": 0.55,
+    "frontalArea": 0.6
+  }
+]
