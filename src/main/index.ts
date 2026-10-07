@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { invokeCopilot } from './llm';
@@ -16,6 +16,8 @@ function createWindow() {
   win = new BrowserWindow({
     width: 1200,
     height: 800,
+    minWidth: 1100,
+    minHeight: 700,
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'), // Vite-plugin-electron construye mjs
       contextIsolation: true,
@@ -25,10 +27,13 @@ function createWindow() {
     title: 'ModSim'
   });
 
+  // Reemplazar menú por defecto con null para interfaz limpia
+  Menu.setApplicationMenu(null);
+
   if (process.env.VITE_DEV_SERVER_URL) {
     win.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {
-    win.loadFile(path.join(process.env.DIST, 'index.html'));
+    win.loadFile(path.join(process.env.DIST || '', 'index.html'));
   }
 }
 

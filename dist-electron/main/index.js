@@ -1,860 +1,395 @@
-import { BrowserWindow, app, ipcMain } from "electron";
-import path from "path";
-import { fileURLToPath } from "url";
+import { BrowserWindow as e, Menu as t, app as n, ipcMain as r } from "electron";
+import i from "path";
+import { fileURLToPath as a } from "url";
 //#region node_modules/@google/generative-ai/dist/index.mjs
-/**
-* Contains the list of OpenAPI data types
-* as defined by https://swagger.io/docs/specification/data-models/data-types/
-* @public
-*/
-var SchemaType;
-(function(SchemaType) {
-	/** String type. */
-	SchemaType["STRING"] = "string";
-	/** Number type. */
-	SchemaType["NUMBER"] = "number";
-	/** Integer type. */
-	SchemaType["INTEGER"] = "integer";
-	/** Boolean type. */
-	SchemaType["BOOLEAN"] = "boolean";
-	/** Array type. */
-	SchemaType["ARRAY"] = "array";
-	/** Object type. */
-	SchemaType["OBJECT"] = "object";
-})(SchemaType || (SchemaType = {}));
-/**
-* @license
-* Copyright 2024 Google LLC
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*   http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*/
-/**
-* @public
-*/
-var ExecutableCodeLanguage;
-(function(ExecutableCodeLanguage) {
-	ExecutableCodeLanguage["LANGUAGE_UNSPECIFIED"] = "language_unspecified";
-	ExecutableCodeLanguage["PYTHON"] = "python";
-})(ExecutableCodeLanguage || (ExecutableCodeLanguage = {}));
-/**
-* Possible outcomes of code execution.
-* @public
-*/
-var Outcome;
-(function(Outcome) {
-	/**
-	* Unspecified status. This value should not be used.
-	*/
-	Outcome["OUTCOME_UNSPECIFIED"] = "outcome_unspecified";
-	/**
-	* Code execution completed successfully.
-	*/
-	Outcome["OUTCOME_OK"] = "outcome_ok";
-	/**
-	* Code execution finished but with a failure. `stderr` should contain the
-	* reason.
-	*/
-	Outcome["OUTCOME_FAILED"] = "outcome_failed";
-	/**
-	* Code execution ran for too long, and was cancelled. There may or may not
-	* be a partial output present.
-	*/
-	Outcome["OUTCOME_DEADLINE_EXCEEDED"] = "outcome_deadline_exceeded";
-})(Outcome || (Outcome = {}));
-/**
-* @license
-* Copyright 2024 Google LLC
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*   http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*/
-/**
-* Possible roles.
-* @public
-*/
-var POSSIBLE_ROLES = [
+var o;
+(function(e) {
+	e.STRING = "string", e.NUMBER = "number", e.INTEGER = "integer", e.BOOLEAN = "boolean", e.ARRAY = "array", e.OBJECT = "object";
+})(o ||= {});
+var s;
+(function(e) {
+	e.LANGUAGE_UNSPECIFIED = "language_unspecified", e.PYTHON = "python";
+})(s ||= {});
+var c;
+(function(e) {
+	e.OUTCOME_UNSPECIFIED = "outcome_unspecified", e.OUTCOME_OK = "outcome_ok", e.OUTCOME_FAILED = "outcome_failed", e.OUTCOME_DEADLINE_EXCEEDED = "outcome_deadline_exceeded";
+})(c ||= {});
+var l = [
 	"user",
 	"model",
 	"function",
 	"system"
-];
-/**
-* Harm categories that would cause prompts or candidates to be blocked.
-* @public
-*/
-var HarmCategory;
-(function(HarmCategory) {
-	HarmCategory["HARM_CATEGORY_UNSPECIFIED"] = "HARM_CATEGORY_UNSPECIFIED";
-	HarmCategory["HARM_CATEGORY_HATE_SPEECH"] = "HARM_CATEGORY_HATE_SPEECH";
-	HarmCategory["HARM_CATEGORY_SEXUALLY_EXPLICIT"] = "HARM_CATEGORY_SEXUALLY_EXPLICIT";
-	HarmCategory["HARM_CATEGORY_HARASSMENT"] = "HARM_CATEGORY_HARASSMENT";
-	HarmCategory["HARM_CATEGORY_DANGEROUS_CONTENT"] = "HARM_CATEGORY_DANGEROUS_CONTENT";
-	HarmCategory["HARM_CATEGORY_CIVIC_INTEGRITY"] = "HARM_CATEGORY_CIVIC_INTEGRITY";
-})(HarmCategory || (HarmCategory = {}));
-/**
-* Threshold above which a prompt or candidate will be blocked.
-* @public
-*/
-var HarmBlockThreshold;
-(function(HarmBlockThreshold) {
-	/** Threshold is unspecified. */
-	HarmBlockThreshold["HARM_BLOCK_THRESHOLD_UNSPECIFIED"] = "HARM_BLOCK_THRESHOLD_UNSPECIFIED";
-	/** Content with NEGLIGIBLE will be allowed. */
-	HarmBlockThreshold["BLOCK_LOW_AND_ABOVE"] = "BLOCK_LOW_AND_ABOVE";
-	/** Content with NEGLIGIBLE and LOW will be allowed. */
-	HarmBlockThreshold["BLOCK_MEDIUM_AND_ABOVE"] = "BLOCK_MEDIUM_AND_ABOVE";
-	/** Content with NEGLIGIBLE, LOW, and MEDIUM will be allowed. */
-	HarmBlockThreshold["BLOCK_ONLY_HIGH"] = "BLOCK_ONLY_HIGH";
-	/** All content will be allowed. */
-	HarmBlockThreshold["BLOCK_NONE"] = "BLOCK_NONE";
-})(HarmBlockThreshold || (HarmBlockThreshold = {}));
-/**
-* Probability that a prompt or candidate matches a harm category.
-* @public
-*/
-var HarmProbability;
-(function(HarmProbability) {
-	/** Probability is unspecified. */
-	HarmProbability["HARM_PROBABILITY_UNSPECIFIED"] = "HARM_PROBABILITY_UNSPECIFIED";
-	/** Content has a negligible chance of being unsafe. */
-	HarmProbability["NEGLIGIBLE"] = "NEGLIGIBLE";
-	/** Content has a low chance of being unsafe. */
-	HarmProbability["LOW"] = "LOW";
-	/** Content has a medium chance of being unsafe. */
-	HarmProbability["MEDIUM"] = "MEDIUM";
-	/** Content has a high chance of being unsafe. */
-	HarmProbability["HIGH"] = "HIGH";
-})(HarmProbability || (HarmProbability = {}));
-/**
-* Reason that a prompt was blocked.
-* @public
-*/
-var BlockReason;
-(function(BlockReason) {
-	BlockReason["BLOCKED_REASON_UNSPECIFIED"] = "BLOCKED_REASON_UNSPECIFIED";
-	BlockReason["SAFETY"] = "SAFETY";
-	BlockReason["OTHER"] = "OTHER";
-})(BlockReason || (BlockReason = {}));
-/**
-* Reason that a candidate finished.
-* @public
-*/
-var FinishReason;
-(function(FinishReason) {
-	FinishReason["FINISH_REASON_UNSPECIFIED"] = "FINISH_REASON_UNSPECIFIED";
-	FinishReason["STOP"] = "STOP";
-	FinishReason["MAX_TOKENS"] = "MAX_TOKENS";
-	FinishReason["SAFETY"] = "SAFETY";
-	FinishReason["RECITATION"] = "RECITATION";
-	FinishReason["LANGUAGE"] = "LANGUAGE";
-	FinishReason["BLOCKLIST"] = "BLOCKLIST";
-	FinishReason["PROHIBITED_CONTENT"] = "PROHIBITED_CONTENT";
-	FinishReason["SPII"] = "SPII";
-	FinishReason["MALFORMED_FUNCTION_CALL"] = "MALFORMED_FUNCTION_CALL";
-	FinishReason["OTHER"] = "OTHER";
-})(FinishReason || (FinishReason = {}));
-/**
-* Task type for embedding content.
-* @public
-*/
-var TaskType;
-(function(TaskType) {
-	TaskType["TASK_TYPE_UNSPECIFIED"] = "TASK_TYPE_UNSPECIFIED";
-	TaskType["RETRIEVAL_QUERY"] = "RETRIEVAL_QUERY";
-	TaskType["RETRIEVAL_DOCUMENT"] = "RETRIEVAL_DOCUMENT";
-	TaskType["SEMANTIC_SIMILARITY"] = "SEMANTIC_SIMILARITY";
-	TaskType["CLASSIFICATION"] = "CLASSIFICATION";
-	TaskType["CLUSTERING"] = "CLUSTERING";
-})(TaskType || (TaskType = {}));
-/**
-* @public
-*/
-var FunctionCallingMode;
-(function(FunctionCallingMode) {
-	FunctionCallingMode["MODE_UNSPECIFIED"] = "MODE_UNSPECIFIED";
-	FunctionCallingMode["AUTO"] = "AUTO";
-	FunctionCallingMode["ANY"] = "ANY";
-	FunctionCallingMode["NONE"] = "NONE";
-})(FunctionCallingMode || (FunctionCallingMode = {}));
-/**
-* The mode of the predictor to be used in dynamic retrieval.
-* @public
-*/
-var DynamicRetrievalMode;
-(function(DynamicRetrievalMode) {
-	DynamicRetrievalMode["MODE_UNSPECIFIED"] = "MODE_UNSPECIFIED";
-	DynamicRetrievalMode["MODE_DYNAMIC"] = "MODE_DYNAMIC";
-})(DynamicRetrievalMode || (DynamicRetrievalMode = {}));
-/**
-* @license
-* Copyright 2024 Google LLC
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*   http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*/
-/**
-* Basic error type for this SDK.
-* @public
-*/
-var GoogleGenerativeAIError = class extends Error {
-	constructor(message) {
-		super(`[GoogleGenerativeAI Error]: ${message}`);
+], u;
+(function(e) {
+	e.HARM_CATEGORY_UNSPECIFIED = "HARM_CATEGORY_UNSPECIFIED", e.HARM_CATEGORY_HATE_SPEECH = "HARM_CATEGORY_HATE_SPEECH", e.HARM_CATEGORY_SEXUALLY_EXPLICIT = "HARM_CATEGORY_SEXUALLY_EXPLICIT", e.HARM_CATEGORY_HARASSMENT = "HARM_CATEGORY_HARASSMENT", e.HARM_CATEGORY_DANGEROUS_CONTENT = "HARM_CATEGORY_DANGEROUS_CONTENT", e.HARM_CATEGORY_CIVIC_INTEGRITY = "HARM_CATEGORY_CIVIC_INTEGRITY";
+})(u ||= {});
+var d;
+(function(e) {
+	e.HARM_BLOCK_THRESHOLD_UNSPECIFIED = "HARM_BLOCK_THRESHOLD_UNSPECIFIED", e.BLOCK_LOW_AND_ABOVE = "BLOCK_LOW_AND_ABOVE", e.BLOCK_MEDIUM_AND_ABOVE = "BLOCK_MEDIUM_AND_ABOVE", e.BLOCK_ONLY_HIGH = "BLOCK_ONLY_HIGH", e.BLOCK_NONE = "BLOCK_NONE";
+})(d ||= {});
+var f;
+(function(e) {
+	e.HARM_PROBABILITY_UNSPECIFIED = "HARM_PROBABILITY_UNSPECIFIED", e.NEGLIGIBLE = "NEGLIGIBLE", e.LOW = "LOW", e.MEDIUM = "MEDIUM", e.HIGH = "HIGH";
+})(f ||= {});
+var p;
+(function(e) {
+	e.BLOCKED_REASON_UNSPECIFIED = "BLOCKED_REASON_UNSPECIFIED", e.SAFETY = "SAFETY", e.OTHER = "OTHER";
+})(p ||= {});
+var m;
+(function(e) {
+	e.FINISH_REASON_UNSPECIFIED = "FINISH_REASON_UNSPECIFIED", e.STOP = "STOP", e.MAX_TOKENS = "MAX_TOKENS", e.SAFETY = "SAFETY", e.RECITATION = "RECITATION", e.LANGUAGE = "LANGUAGE", e.BLOCKLIST = "BLOCKLIST", e.PROHIBITED_CONTENT = "PROHIBITED_CONTENT", e.SPII = "SPII", e.MALFORMED_FUNCTION_CALL = "MALFORMED_FUNCTION_CALL", e.OTHER = "OTHER";
+})(m ||= {});
+var h;
+(function(e) {
+	e.TASK_TYPE_UNSPECIFIED = "TASK_TYPE_UNSPECIFIED", e.RETRIEVAL_QUERY = "RETRIEVAL_QUERY", e.RETRIEVAL_DOCUMENT = "RETRIEVAL_DOCUMENT", e.SEMANTIC_SIMILARITY = "SEMANTIC_SIMILARITY", e.CLASSIFICATION = "CLASSIFICATION", e.CLUSTERING = "CLUSTERING";
+})(h ||= {});
+var g;
+(function(e) {
+	e.MODE_UNSPECIFIED = "MODE_UNSPECIFIED", e.AUTO = "AUTO", e.ANY = "ANY", e.NONE = "NONE";
+})(g ||= {});
+var ee;
+(function(e) {
+	e.MODE_UNSPECIFIED = "MODE_UNSPECIFIED", e.MODE_DYNAMIC = "MODE_DYNAMIC";
+})(ee ||= {});
+var _ = class extends Error {
+	constructor(e) {
+		super(`[GoogleGenerativeAI Error]: ${e}`);
 	}
-};
-/**
-* Errors in the contents of a response from the model. This includes parsing
-* errors, or responses including a safety block reason.
-* @public
-*/
-var GoogleGenerativeAIResponseError = class extends GoogleGenerativeAIError {
-	constructor(message, response) {
-		super(message);
-		this.response = response;
+}, v = class extends _ {
+	constructor(e, t) {
+		super(e), this.response = t;
 	}
-};
-/**
-* Error class covering HTTP errors when calling the server. Includes HTTP
-* status, statusText, and optional details, if provided in the server response.
-* @public
-*/
-var GoogleGenerativeAIFetchError = class extends GoogleGenerativeAIError {
-	constructor(message, status, statusText, errorDetails) {
-		super(message);
-		this.status = status;
-		this.statusText = statusText;
-		this.errorDetails = errorDetails;
+}, y = class extends _ {
+	constructor(e, t, n, r) {
+		super(e), this.status = t, this.statusText = n, this.errorDetails = r;
 	}
-};
-/**
-* Errors in the contents of a request originating from user input.
-* @public
-*/
-var GoogleGenerativeAIRequestInputError = class extends GoogleGenerativeAIError {};
-/**
-* Error thrown when a request is aborted, either due to a timeout or
-* intentional cancellation by the user.
-* @public
-*/
-var GoogleGenerativeAIAbortError = class extends GoogleGenerativeAIError {};
-/**
-* @license
-* Copyright 2024 Google LLC
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*   http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*/
-var DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com";
-var DEFAULT_API_VERSION = "v1beta";
-/**
-* We can't `require` package.json if this runs on web. We will use rollup to
-* swap in the version number here at build time.
-*/
-var PACKAGE_VERSION = "0.24.1";
-var PACKAGE_LOG_HEADER = "genai-js";
-var Task;
-(function(Task) {
-	Task["GENERATE_CONTENT"] = "generateContent";
-	Task["STREAM_GENERATE_CONTENT"] = "streamGenerateContent";
-	Task["COUNT_TOKENS"] = "countTokens";
-	Task["EMBED_CONTENT"] = "embedContent";
-	Task["BATCH_EMBED_CONTENTS"] = "batchEmbedContents";
-})(Task || (Task = {}));
-var RequestUrl = class {
-	constructor(model, task, apiKey, stream, requestOptions) {
-		this.model = model;
-		this.task = task;
-		this.apiKey = apiKey;
-		this.stream = stream;
-		this.requestOptions = requestOptions;
+}, b = class extends _ {}, x = class extends _ {}, te = "https://generativelanguage.googleapis.com", S = "v1beta", ne = "0.24.1", re = "genai-js", C;
+(function(e) {
+	e.GENERATE_CONTENT = "generateContent", e.STREAM_GENERATE_CONTENT = "streamGenerateContent", e.COUNT_TOKENS = "countTokens", e.EMBED_CONTENT = "embedContent", e.BATCH_EMBED_CONTENTS = "batchEmbedContents";
+})(C ||= {});
+var w = class {
+	constructor(e, t, n, r, i) {
+		this.model = e, this.task = t, this.apiKey = n, this.stream = r, this.requestOptions = i;
 	}
 	toString() {
-		var _a, _b;
-		const apiVersion = ((_a = this.requestOptions) === null || _a === void 0 ? void 0 : _a.apiVersion) || DEFAULT_API_VERSION;
-		let url = `${((_b = this.requestOptions) === null || _b === void 0 ? void 0 : _b.baseUrl) || DEFAULT_BASE_URL}/${apiVersion}/${this.model}:${this.task}`;
-		if (this.stream) url += "?alt=sse";
-		return url;
+		let e = this.requestOptions?.apiVersion || S, t = `${this.requestOptions?.baseUrl || te}/${e}/${this.model}:${this.task}`;
+		return this.stream && (t += "?alt=sse"), t;
 	}
 };
-/**
-* Simple, but may become more complex if we add more versions to log.
-*/
-function getClientHeaders(requestOptions) {
-	const clientHeaders = [];
-	if (requestOptions === null || requestOptions === void 0 ? void 0 : requestOptions.apiClient) clientHeaders.push(requestOptions.apiClient);
-	clientHeaders.push(`${PACKAGE_LOG_HEADER}/${PACKAGE_VERSION}`);
-	return clientHeaders.join(" ");
+function T(e) {
+	let t = [];
+	return e?.apiClient && t.push(e.apiClient), t.push(`${re}/${ne}`), t.join(" ");
 }
-async function getHeaders(url) {
-	var _a;
-	const headers = new Headers();
-	headers.append("Content-Type", "application/json");
-	headers.append("x-goog-api-client", getClientHeaders(url.requestOptions));
-	headers.append("x-goog-api-key", url.apiKey);
-	let customHeaders = (_a = url.requestOptions) === null || _a === void 0 ? void 0 : _a.customHeaders;
-	if (customHeaders) {
-		if (!(customHeaders instanceof Headers)) try {
-			customHeaders = new Headers(customHeaders);
+async function E(e) {
+	let t = new Headers();
+	t.append("Content-Type", "application/json"), t.append("x-goog-api-client", T(e.requestOptions)), t.append("x-goog-api-key", e.apiKey);
+	let n = e.requestOptions?.customHeaders;
+	if (n) {
+		if (!(n instanceof Headers)) try {
+			n = new Headers(n);
 		} catch (e) {
-			throw new GoogleGenerativeAIRequestInputError(`unable to convert customHeaders value ${JSON.stringify(customHeaders)} to Headers: ${e.message}`);
+			throw new b(`unable to convert customHeaders value ${JSON.stringify(n)} to Headers: ${e.message}`);
 		}
-		for (const [headerName, headerValue] of customHeaders.entries()) {
-			if (headerName === "x-goog-api-key") throw new GoogleGenerativeAIRequestInputError(`Cannot set reserved header name ${headerName}`);
-			else if (headerName === "x-goog-api-client") throw new GoogleGenerativeAIRequestInputError(`Header name ${headerName} can only be set using the apiClient field`);
-			headers.append(headerName, headerValue);
+		for (let [e, r] of n.entries()) {
+			if (e === "x-goog-api-key") throw new b(`Cannot set reserved header name ${e}`);
+			if (e === "x-goog-api-client") throw new b(`Header name ${e} can only be set using the apiClient field`);
+			t.append(e, r);
 		}
 	}
-	return headers;
+	return t;
 }
-async function constructModelRequest(model, task, apiKey, stream, body, requestOptions) {
-	const url = new RequestUrl(model, task, apiKey, stream, requestOptions);
+async function D(e, t, n, r, i, a) {
+	let o = new w(e, t, n, r, a);
 	return {
-		url: url.toString(),
-		fetchOptions: Object.assign(Object.assign({}, buildFetchOptions(requestOptions)), {
+		url: o.toString(),
+		fetchOptions: Object.assign(Object.assign({}, se(a)), {
 			method: "POST",
-			headers: await getHeaders(url),
-			body
+			headers: await E(o),
+			body: i
 		})
 	};
 }
-async function makeModelRequest(model, task, apiKey, stream, body, requestOptions = {}, fetchFn = fetch) {
-	const { url, fetchOptions } = await constructModelRequest(model, task, apiKey, stream, body, requestOptions);
-	return makeRequest(url, fetchOptions, fetchFn);
+async function O(e, t, n, r, i, a = {}, o = fetch) {
+	let { url: s, fetchOptions: c } = await D(e, t, n, r, i, a);
+	return ie(s, c, o);
 }
-async function makeRequest(url, fetchOptions, fetchFn = fetch) {
-	let response;
+async function ie(e, t, n = fetch) {
+	let r;
 	try {
-		response = await fetchFn(url, fetchOptions);
-	} catch (e) {
-		handleResponseError(e, url);
+		r = await n(e, t);
+	} catch (t) {
+		ae(t, e);
 	}
-	if (!response.ok) await handleResponseNotOk(response, url);
-	return response;
+	return r.ok || await oe(r, e), r;
 }
-function handleResponseError(e, url) {
-	let err = e;
-	if (err.name === "AbortError") {
-		err = new GoogleGenerativeAIAbortError(`Request aborted when fetching ${url.toString()}: ${e.message}`);
-		err.stack = e.stack;
-	} else if (!(e instanceof GoogleGenerativeAIFetchError || e instanceof GoogleGenerativeAIRequestInputError)) {
-		err = new GoogleGenerativeAIError(`Error fetching from ${url.toString()}: ${e.message}`);
-		err.stack = e.stack;
-	}
-	throw err;
+function ae(e, t) {
+	let n = e;
+	throw n.name === "AbortError" ? (n = new x(`Request aborted when fetching ${t.toString()}: ${e.message}`), n.stack = e.stack) : e instanceof y || e instanceof b || (n = new _(`Error fetching from ${t.toString()}: ${e.message}`), n.stack = e.stack), n;
 }
-async function handleResponseNotOk(response, url) {
-	let message = "";
-	let errorDetails;
+async function oe(e, t) {
+	let n = "", r;
 	try {
-		const json = await response.json();
-		message = json.error.message;
-		if (json.error.details) {
-			message += ` ${JSON.stringify(json.error.details)}`;
-			errorDetails = json.error.details;
+		let t = await e.json();
+		n = t.error.message, t.error.details && (n += ` ${JSON.stringify(t.error.details)}`, r = t.error.details);
+	} catch {}
+	throw new y(`Error fetching from ${t.toString()}: [${e.status} ${e.statusText}] ${n}`, e.status, e.statusText, r);
+}
+function se(e) {
+	let t = {};
+	if (e?.signal !== void 0 || e?.timeout >= 0) {
+		let n = new AbortController();
+		e?.timeout >= 0 && setTimeout(() => n.abort(), e.timeout), e?.signal && e.signal.addEventListener("abort", () => {
+			n.abort();
+		}), t.signal = n.signal;
+	}
+	return t;
+}
+function k(e) {
+	return e.text = () => {
+		if (e.candidates && e.candidates.length > 0) {
+			if (e.candidates.length > 1 && console.warn(`This response had ${e.candidates.length} candidates. Returning text from the first candidate only. Access response.candidates directly to use the other candidates.`), M(e.candidates[0])) throw new v(`${N(e)}`, e);
+			return ce(e);
 		}
-	} catch (e) {}
-	throw new GoogleGenerativeAIFetchError(`Error fetching from ${url.toString()}: [${response.status} ${response.statusText}] ${message}`, response.status, response.statusText, errorDetails);
-}
-/**
-* Generates the request options to be passed to the fetch API.
-* @param requestOptions - The user-defined request options.
-* @returns The generated request options.
-*/
-function buildFetchOptions(requestOptions) {
-	const fetchOptions = {};
-	if ((requestOptions === null || requestOptions === void 0 ? void 0 : requestOptions.signal) !== void 0 || (requestOptions === null || requestOptions === void 0 ? void 0 : requestOptions.timeout) >= 0) {
-		const controller = new AbortController();
-		if ((requestOptions === null || requestOptions === void 0 ? void 0 : requestOptions.timeout) >= 0) setTimeout(() => controller.abort(), requestOptions.timeout);
-		if (requestOptions === null || requestOptions === void 0 ? void 0 : requestOptions.signal) requestOptions.signal.addEventListener("abort", () => {
-			controller.abort();
-		});
-		fetchOptions.signal = controller.signal;
-	}
-	return fetchOptions;
-}
-/**
-* @license
-* Copyright 2024 Google LLC
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*   http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*/
-/**
-* Adds convenience helper methods to a response object, including stream
-* chunks (as long as each chunk is a complete GenerateContentResponse JSON).
-*/
-function addHelpers(response) {
-	response.text = () => {
-		if (response.candidates && response.candidates.length > 0) {
-			if (response.candidates.length > 1) console.warn(`This response had ${response.candidates.length} candidates. Returning text from the first candidate only. Access response.candidates directly to use the other candidates.`);
-			if (hadBadFinishReason(response.candidates[0])) throw new GoogleGenerativeAIResponseError(`${formatBlockErrorMessage(response)}`, response);
-			return getText(response);
-		} else if (response.promptFeedback) throw new GoogleGenerativeAIResponseError(`Text not available. ${formatBlockErrorMessage(response)}`, response);
+		if (e.promptFeedback) throw new v(`Text not available. ${N(e)}`, e);
 		return "";
-	};
-	/**
-	* TODO: remove at next major version
-	*/
-	response.functionCall = () => {
-		if (response.candidates && response.candidates.length > 0) {
-			if (response.candidates.length > 1) console.warn(`This response had ${response.candidates.length} candidates. Returning function calls from the first candidate only. Access response.candidates directly to use the other candidates.`);
-			if (hadBadFinishReason(response.candidates[0])) throw new GoogleGenerativeAIResponseError(`${formatBlockErrorMessage(response)}`, response);
-			console.warn("response.functionCall() is deprecated. Use response.functionCalls() instead.");
-			return getFunctionCalls(response)[0];
-		} else if (response.promptFeedback) throw new GoogleGenerativeAIResponseError(`Function call not available. ${formatBlockErrorMessage(response)}`, response);
-	};
-	response.functionCalls = () => {
-		if (response.candidates && response.candidates.length > 0) {
-			if (response.candidates.length > 1) console.warn(`This response had ${response.candidates.length} candidates. Returning function calls from the first candidate only. Access response.candidates directly to use the other candidates.`);
-			if (hadBadFinishReason(response.candidates[0])) throw new GoogleGenerativeAIResponseError(`${formatBlockErrorMessage(response)}`, response);
-			return getFunctionCalls(response);
-		} else if (response.promptFeedback) throw new GoogleGenerativeAIResponseError(`Function call not available. ${formatBlockErrorMessage(response)}`, response);
-	};
-	return response;
-}
-/**
-* Returns all text found in all parts of first candidate.
-*/
-function getText(response) {
-	var _a, _b, _c, _d;
-	const textStrings = [];
-	if ((_b = (_a = response.candidates) === null || _a === void 0 ? void 0 : _a[0].content) === null || _b === void 0 ? void 0 : _b.parts) for (const part of (_d = (_c = response.candidates) === null || _c === void 0 ? void 0 : _c[0].content) === null || _d === void 0 ? void 0 : _d.parts) {
-		if (part.text) textStrings.push(part.text);
-		if (part.executableCode) textStrings.push("\n```" + part.executableCode.language + "\n" + part.executableCode.code + "\n```\n");
-		if (part.codeExecutionResult) textStrings.push("\n```\n" + part.codeExecutionResult.output + "\n```\n");
-	}
-	if (textStrings.length > 0) return textStrings.join("");
-	else return "";
-}
-/**
-* Returns functionCall of first candidate.
-*/
-function getFunctionCalls(response) {
-	var _a, _b, _c, _d;
-	const functionCalls = [];
-	if ((_b = (_a = response.candidates) === null || _a === void 0 ? void 0 : _a[0].content) === null || _b === void 0 ? void 0 : _b.parts) {
-		for (const part of (_d = (_c = response.candidates) === null || _c === void 0 ? void 0 : _c[0].content) === null || _d === void 0 ? void 0 : _d.parts) if (part.functionCall) functionCalls.push(part.functionCall);
-	}
-	if (functionCalls.length > 0) return functionCalls;
-	else return;
-}
-var badFinishReasons = [
-	FinishReason.RECITATION,
-	FinishReason.SAFETY,
-	FinishReason.LANGUAGE
-];
-function hadBadFinishReason(candidate) {
-	return !!candidate.finishReason && badFinishReasons.includes(candidate.finishReason);
-}
-function formatBlockErrorMessage(response) {
-	var _a, _b, _c;
-	let message = "";
-	if ((!response.candidates || response.candidates.length === 0) && response.promptFeedback) {
-		message += "Response was blocked";
-		if ((_a = response.promptFeedback) === null || _a === void 0 ? void 0 : _a.blockReason) message += ` due to ${response.promptFeedback.blockReason}`;
-		if ((_b = response.promptFeedback) === null || _b === void 0 ? void 0 : _b.blockReasonMessage) message += `: ${response.promptFeedback.blockReasonMessage}`;
-	} else if ((_c = response.candidates) === null || _c === void 0 ? void 0 : _c[0]) {
-		const firstCandidate = response.candidates[0];
-		if (hadBadFinishReason(firstCandidate)) {
-			message += `Candidate was blocked due to ${firstCandidate.finishReason}`;
-			if (firstCandidate.finishMessage) message += `: ${firstCandidate.finishMessage}`;
+	}, e.functionCall = () => {
+		if (e.candidates && e.candidates.length > 0) {
+			if (e.candidates.length > 1 && console.warn(`This response had ${e.candidates.length} candidates. Returning function calls from the first candidate only. Access response.candidates directly to use the other candidates.`), M(e.candidates[0])) throw new v(`${N(e)}`, e);
+			return console.warn("response.functionCall() is deprecated. Use response.functionCalls() instead."), A(e)[0];
 		}
+		if (e.promptFeedback) throw new v(`Function call not available. ${N(e)}`, e);
+	}, e.functionCalls = () => {
+		if (e.candidates && e.candidates.length > 0) {
+			if (e.candidates.length > 1 && console.warn(`This response had ${e.candidates.length} candidates. Returning function calls from the first candidate only. Access response.candidates directly to use the other candidates.`), M(e.candidates[0])) throw new v(`${N(e)}`, e);
+			return A(e);
+		}
+		if (e.promptFeedback) throw new v(`Function call not available. ${N(e)}`, e);
+	}, e;
+}
+function ce(e) {
+	let t = [];
+	if (e.candidates?.[0].content?.parts) for (let n of e.candidates?.[0].content?.parts) n.text && t.push(n.text), n.executableCode && t.push("\n```" + n.executableCode.language + "\n" + n.executableCode.code + "\n```\n"), n.codeExecutionResult && t.push("\n```\n" + n.codeExecutionResult.output + "\n```\n");
+	return t.length > 0 ? t.join("") : "";
+}
+function A(e) {
+	let t = [];
+	if (e.candidates?.[0].content?.parts) for (let n of e.candidates?.[0].content?.parts) n.functionCall && t.push(n.functionCall);
+	if (t.length > 0) return t;
+}
+var j = [
+	m.RECITATION,
+	m.SAFETY,
+	m.LANGUAGE
+];
+function M(e) {
+	return !!e.finishReason && j.includes(e.finishReason);
+}
+function N(e) {
+	let t = "";
+	if ((!e.candidates || e.candidates.length === 0) && e.promptFeedback) t += "Response was blocked", e.promptFeedback?.blockReason && (t += ` due to ${e.promptFeedback.blockReason}`), e.promptFeedback?.blockReasonMessage && (t += `: ${e.promptFeedback.blockReasonMessage}`);
+	else if (e.candidates?.[0]) {
+		let n = e.candidates[0];
+		M(n) && (t += `Candidate was blocked due to ${n.finishReason}`, n.finishMessage && (t += `: ${n.finishMessage}`));
 	}
-	return message;
+	return t;
 }
-/******************************************************************************
-Copyright (c) Microsoft Corporation.
-
-Permission to use, copy, modify, and/or distribute this software for any
-purpose with or without fee is hereby granted.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
-AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
-LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
-OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
-PERFORMANCE OF THIS SOFTWARE.
-***************************************************************************** */
-function __await(v) {
-	return this instanceof __await ? (this.v = v, this) : new __await(v);
+function P(e) {
+	return this instanceof P ? (this.v = e, this) : new P(e);
 }
-function __asyncGenerator(thisArg, _arguments, generator) {
-	if (!Symbol.asyncIterator) throw new TypeError("Symbol.asyncIterator is not defined.");
-	var g = generator.apply(thisArg, _arguments || []), i, q = [];
-	return i = {}, verb("next"), verb("throw"), verb("return"), i[Symbol.asyncIterator] = function() {
+function F(e, t, n) {
+	if (!Symbol.asyncIterator) throw TypeError("Symbol.asyncIterator is not defined.");
+	var r = n.apply(e, t || []), i, a = [];
+	return i = {}, o("next"), o("throw"), o("return"), i[Symbol.asyncIterator] = function() {
 		return this;
 	}, i;
-	function verb(n) {
-		if (g[n]) i[n] = function(v) {
-			return new Promise(function(a, b) {
-				q.push([
+	function o(e) {
+		r[e] && (i[e] = function(t) {
+			return new Promise(function(n, r) {
+				a.push([
+					e,
+					t,
 					n,
-					v,
-					a,
-					b
-				]) > 1 || resume(n, v);
+					r
+				]) > 1 || s(e, t);
 			});
-		};
+		});
 	}
-	function resume(n, v) {
+	function s(e, t) {
 		try {
-			step(g[n](v));
+			c(r[e](t));
 		} catch (e) {
-			settle(q[0][3], e);
+			d(a[0][3], e);
 		}
 	}
-	function step(r) {
-		r.value instanceof __await ? Promise.resolve(r.value.v).then(fulfill, reject) : settle(q[0][2], r);
+	function c(e) {
+		e.value instanceof P ? Promise.resolve(e.value.v).then(l, u) : d(a[0][2], e);
 	}
-	function fulfill(value) {
-		resume("next", value);
+	function l(e) {
+		s("next", e);
 	}
-	function reject(value) {
-		resume("throw", value);
+	function u(e) {
+		s("throw", e);
 	}
-	function settle(f, v) {
-		if (f(v), q.shift(), q.length) resume(q[0][0], q[0][1]);
+	function d(e, t) {
+		e(t), a.shift(), a.length && s(a[0][0], a[0][1]);
 	}
 }
-/**
-* @license
-* Copyright 2024 Google LLC
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*   http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*/
-var responseLineRE = /^data\: (.*)(?:\n\n|\r\r|\r\n\r\n)/;
-/**
-* Process a response.body stream from the backend and return an
-* iterator that provides one complete GenerateContentResponse at a time
-* and a promise that resolves with a single aggregated
-* GenerateContentResponse.
-*
-* @param response - Response from a fetch call
-*/
-function processStream(response) {
-	const [stream1, stream2] = getResponseStream(response.body.pipeThrough(new TextDecoderStream("utf8", { fatal: true }))).tee();
+var I = /^data\: (.*)(?:\n\n|\r\r|\r\n\r\n)/;
+function L(e) {
+	let [t, n] = B(e.body.pipeThrough(new TextDecoderStream("utf8", { fatal: !0 }))).tee();
 	return {
-		stream: generateResponseSequence(stream1),
-		response: getResponsePromise(stream2)
+		stream: z(t),
+		response: R(n)
 	};
 }
-async function getResponsePromise(stream) {
-	const allResponses = [];
-	const reader = stream.getReader();
-	while (true) {
-		const { done, value } = await reader.read();
-		if (done) return addHelpers(aggregateResponses(allResponses));
-		allResponses.push(value);
+async function R(e) {
+	let t = [], n = e.getReader();
+	for (;;) {
+		let { done: e, value: r } = await n.read();
+		if (e) return k(V(t));
+		t.push(r);
 	}
 }
-function generateResponseSequence(stream) {
-	return __asyncGenerator(this, arguments, function* generateResponseSequence_1() {
-		const reader = stream.getReader();
-		while (true) {
-			const { value, done } = yield __await(reader.read());
-			if (done) break;
-			yield yield __await(addHelpers(value));
+function z(e) {
+	return F(this, arguments, function* () {
+		let t = e.getReader();
+		for (;;) {
+			let { value: e, done: n } = yield P(t.read());
+			if (n) break;
+			yield yield P(k(e));
 		}
 	});
 }
-/**
-* Reads a raw stream from the fetch response and join incomplete
-* chunks, returning a new stream that provides a single complete
-* GenerateContentResponse in each iteration.
-*/
-function getResponseStream(inputStream) {
-	const reader = inputStream.getReader();
-	return new ReadableStream({ start(controller) {
-		let currentText = "";
-		return pump();
-		function pump() {
-			return reader.read().then(({ value, done }) => {
-				if (done) {
-					if (currentText.trim()) {
-						controller.error(new GoogleGenerativeAIError("Failed to parse stream"));
+function B(e) {
+	let t = e.getReader();
+	return new ReadableStream({ start(e) {
+		let n = "";
+		return r();
+		function r() {
+			return t.read().then(({ value: t, done: i }) => {
+				if (i) {
+					if (n.trim()) {
+						e.error(new _("Failed to parse stream"));
 						return;
 					}
-					controller.close();
+					e.close();
 					return;
 				}
-				currentText += value;
-				let match = currentText.match(responseLineRE);
-				let parsedResponse;
-				while (match) {
+				n += t;
+				let a = n.match(I), o;
+				for (; a;) {
 					try {
-						parsedResponse = JSON.parse(match[1]);
-					} catch (e) {
-						controller.error(new GoogleGenerativeAIError(`Error parsing JSON response: "${match[1]}"`));
+						o = JSON.parse(a[1]);
+					} catch {
+						e.error(new _(`Error parsing JSON response: "${a[1]}"`));
 						return;
 					}
-					controller.enqueue(parsedResponse);
-					currentText = currentText.substring(match[0].length);
-					match = currentText.match(responseLineRE);
+					e.enqueue(o), n = n.substring(a[0].length), a = n.match(I);
 				}
-				return pump();
+				return r();
 			}).catch((e) => {
-				let err = e;
-				err.stack = e.stack;
-				if (err.name === "AbortError") err = new GoogleGenerativeAIAbortError("Request aborted when reading from the stream");
-				else err = new GoogleGenerativeAIError("Error reading from the stream");
-				throw err;
+				let t = e;
+				throw t.stack = e.stack, t = t.name === "AbortError" ? new x("Request aborted when reading from the stream") : new _("Error reading from the stream"), t;
 			});
 		}
 	} });
 }
-/**
-* Aggregates an array of `GenerateContentResponse`s into a single
-* GenerateContentResponse.
-*/
-function aggregateResponses(responses) {
-	const lastResponse = responses[responses.length - 1];
-	const aggregatedResponse = { promptFeedback: lastResponse === null || lastResponse === void 0 ? void 0 : lastResponse.promptFeedback };
-	for (const response of responses) {
-		if (response.candidates) {
-			let candidateIndex = 0;
-			for (const candidate of response.candidates) {
-				if (!aggregatedResponse.candidates) aggregatedResponse.candidates = [];
-				if (!aggregatedResponse.candidates[candidateIndex]) aggregatedResponse.candidates[candidateIndex] = { index: candidateIndex };
-				aggregatedResponse.candidates[candidateIndex].citationMetadata = candidate.citationMetadata;
-				aggregatedResponse.candidates[candidateIndex].groundingMetadata = candidate.groundingMetadata;
-				aggregatedResponse.candidates[candidateIndex].finishReason = candidate.finishReason;
-				aggregatedResponse.candidates[candidateIndex].finishMessage = candidate.finishMessage;
-				aggregatedResponse.candidates[candidateIndex].safetyRatings = candidate.safetyRatings;
-				/**
-				* Candidates should always have content and parts, but this handles
-				* possible malformed responses.
-				*/
-				if (candidate.content && candidate.content.parts) {
-					if (!aggregatedResponse.candidates[candidateIndex].content) aggregatedResponse.candidates[candidateIndex].content = {
-						role: candidate.content.role || "user",
-						parts: []
-					};
-					const newPart = {};
-					for (const part of candidate.content.parts) {
-						if (part.text) newPart.text = part.text;
-						if (part.functionCall) newPart.functionCall = part.functionCall;
-						if (part.executableCode) newPart.executableCode = part.executableCode;
-						if (part.codeExecutionResult) newPart.codeExecutionResult = part.codeExecutionResult;
-						if (Object.keys(newPart).length === 0) newPart.text = "";
-						aggregatedResponse.candidates[candidateIndex].content.parts.push(newPart);
-					}
-				}
+function V(e) {
+	let t = { promptFeedback: e[e.length - 1]?.promptFeedback };
+	for (let n of e) {
+		if (n.candidates) {
+			let e = 0;
+			for (let r of n.candidates) if (t.candidates ||= [], t.candidates[e] || (t.candidates[e] = { index: e }), t.candidates[e].citationMetadata = r.citationMetadata, t.candidates[e].groundingMetadata = r.groundingMetadata, t.candidates[e].finishReason = r.finishReason, t.candidates[e].finishMessage = r.finishMessage, t.candidates[e].safetyRatings = r.safetyRatings, r.content && r.content.parts) {
+				t.candidates[e].content || (t.candidates[e].content = {
+					role: r.content.role || "user",
+					parts: []
+				});
+				let n = {};
+				for (let i of r.content.parts) i.text && (n.text = i.text), i.functionCall && (n.functionCall = i.functionCall), i.executableCode && (n.executableCode = i.executableCode), i.codeExecutionResult && (n.codeExecutionResult = i.codeExecutionResult), Object.keys(n).length === 0 && (n.text = ""), t.candidates[e].content.parts.push(n);
 			}
-			candidateIndex++;
+			e++;
 		}
-		if (response.usageMetadata) aggregatedResponse.usageMetadata = response.usageMetadata;
+		n.usageMetadata && (t.usageMetadata = n.usageMetadata);
 	}
-	return aggregatedResponse;
+	return t;
 }
-/**
-* @license
-* Copyright 2024 Google LLC
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*   http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*/
-async function generateContentStream(apiKey, model, params, requestOptions) {
-	return processStream(await makeModelRequest(model, Task.STREAM_GENERATE_CONTENT, apiKey, true, JSON.stringify(params), requestOptions));
+async function H(e, t, n, r) {
+	return L(await O(t, C.STREAM_GENERATE_CONTENT, e, !0, JSON.stringify(n), r));
 }
-async function generateContent(apiKey, model, params, requestOptions) {
-	return { response: addHelpers(await (await makeModelRequest(model, Task.GENERATE_CONTENT, apiKey, false, JSON.stringify(params), requestOptions)).json()) };
+async function U(e, t, n, r) {
+	return { response: k(await (await O(t, C.GENERATE_CONTENT, e, !1, JSON.stringify(n), r)).json()) };
 }
-/**
-* @license
-* Copyright 2024 Google LLC
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*   http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*/
-function formatSystemInstruction(input) {
-	if (input == null) return;
-	else if (typeof input === "string") return {
-		role: "system",
-		parts: [{ text: input }]
-	};
-	else if (input.text) return {
-		role: "system",
-		parts: [input]
-	};
-	else if (input.parts) {
-		if (!input.role) return {
+function W(e) {
+	if (e != null) {
+		if (typeof e == "string") return {
 			role: "system",
-			parts: input.parts
+			parts: [{ text: e }]
 		};
-		else return input;
+		if (e.text) return {
+			role: "system",
+			parts: [e]
+		};
+		if (e.parts) return e.role ? e : {
+			role: "system",
+			parts: e.parts
+		};
 	}
 }
-function formatNewContent(request) {
-	let newParts = [];
-	if (typeof request === "string") newParts = [{ text: request }];
-	else for (const partOrString of request) if (typeof partOrString === "string") newParts.push({ text: partOrString });
-	else newParts.push(partOrString);
-	return assignRoleToPartsAndValidateSendMessageRequest(newParts);
+function G(e) {
+	let t = [];
+	if (typeof e == "string") t = [{ text: e }];
+	else for (let n of e) typeof n == "string" ? t.push({ text: n }) : t.push(n);
+	return le(t);
 }
-/**
-* When multiple Part types (i.e. FunctionResponsePart and TextPart) are
-* passed in a single Part array, we may need to assign different roles to each
-* part. Currently only FunctionResponsePart requires a role other than 'user'.
-* @private
-* @param parts Array of parts to pass to the model
-* @returns Array of content items
-*/
-function assignRoleToPartsAndValidateSendMessageRequest(parts) {
-	const userContent = {
+function le(e) {
+	let t = {
 		role: "user",
 		parts: []
-	};
-	const functionContent = {
+	}, n = {
 		role: "function",
 		parts: []
-	};
-	let hasUserContent = false;
-	let hasFunctionContent = false;
-	for (const part of parts) if ("functionResponse" in part) {
-		functionContent.parts.push(part);
-		hasFunctionContent = true;
-	} else {
-		userContent.parts.push(part);
-		hasUserContent = true;
-	}
-	if (hasUserContent && hasFunctionContent) throw new GoogleGenerativeAIError("Within a single message, FunctionResponse cannot be mixed with other type of part in the request for sending chat message.");
-	if (!hasUserContent && !hasFunctionContent) throw new GoogleGenerativeAIError("No content is provided for sending chat message.");
-	if (hasUserContent) return userContent;
-	return functionContent;
+	}, r = !1, i = !1;
+	for (let a of e) "functionResponse" in a ? (n.parts.push(a), i = !0) : (t.parts.push(a), r = !0);
+	if (r && i) throw new _("Within a single message, FunctionResponse cannot be mixed with other type of part in the request for sending chat message.");
+	if (!r && !i) throw new _("No content is provided for sending chat message.");
+	return r ? t : n;
 }
-function formatCountTokensInput(params, modelParams) {
-	var _a;
-	let formattedGenerateContentRequest = {
-		model: modelParams === null || modelParams === void 0 ? void 0 : modelParams.model,
-		generationConfig: modelParams === null || modelParams === void 0 ? void 0 : modelParams.generationConfig,
-		safetySettings: modelParams === null || modelParams === void 0 ? void 0 : modelParams.safetySettings,
-		tools: modelParams === null || modelParams === void 0 ? void 0 : modelParams.tools,
-		toolConfig: modelParams === null || modelParams === void 0 ? void 0 : modelParams.toolConfig,
-		systemInstruction: modelParams === null || modelParams === void 0 ? void 0 : modelParams.systemInstruction,
-		cachedContent: (_a = modelParams === null || modelParams === void 0 ? void 0 : modelParams.cachedContent) === null || _a === void 0 ? void 0 : _a.name,
+function ue(e, t) {
+	let n = {
+		model: t?.model,
+		generationConfig: t?.generationConfig,
+		safetySettings: t?.safetySettings,
+		tools: t?.tools,
+		toolConfig: t?.toolConfig,
+		systemInstruction: t?.systemInstruction,
+		cachedContent: t?.cachedContent?.name,
 		contents: []
-	};
-	const containsGenerateContentRequest = params.generateContentRequest != null;
-	if (params.contents) {
-		if (containsGenerateContentRequest) throw new GoogleGenerativeAIRequestInputError("CountTokensRequest must have one of contents or generateContentRequest, not both.");
-		formattedGenerateContentRequest.contents = params.contents;
-	} else if (containsGenerateContentRequest) formattedGenerateContentRequest = Object.assign(Object.assign({}, formattedGenerateContentRequest), params.generateContentRequest);
+	}, r = e.generateContentRequest != null;
+	if (e.contents) {
+		if (r) throw new b("CountTokensRequest must have one of contents or generateContentRequest, not both.");
+		n.contents = e.contents;
+	} else if (r) n = Object.assign(Object.assign({}, n), e.generateContentRequest);
 	else {
-		const content = formatNewContent(params);
-		formattedGenerateContentRequest.contents = [content];
+		let t = G(e);
+		n.contents = [t];
 	}
-	return { generateContentRequest: formattedGenerateContentRequest };
+	return { generateContentRequest: n };
 }
-function formatGenerateContentInput(params) {
-	let formattedRequest;
-	if (params.contents) formattedRequest = params;
-	else formattedRequest = { contents: [formatNewContent(params)] };
-	if (params.systemInstruction) formattedRequest.systemInstruction = formatSystemInstruction(params.systemInstruction);
-	return formattedRequest;
+function K(e) {
+	let t;
+	return t = e.contents ? e : { contents: [G(e)] }, e.systemInstruction && (t.systemInstruction = W(e.systemInstruction)), t;
 }
-function formatEmbedContentInput(params) {
-	if (typeof params === "string" || Array.isArray(params)) return { content: formatNewContent(params) };
-	return params;
+function de(e) {
+	return typeof e == "string" || Array.isArray(e) ? { content: G(e) } : e;
 }
-/**
-* @license
-* Copyright 2024 Google LLC
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*   http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*/
-var VALID_PART_FIELDS = [
+var q = [
 	"text",
 	"inlineData",
 	"functionCall",
 	"functionResponse",
 	"executableCode",
 	"codeExecutionResult"
-];
-var VALID_PARTS_PER_ROLE = {
+], fe = {
 	user: ["text", "inlineData"],
 	function: ["functionResponse"],
 	model: [
@@ -865,15 +400,15 @@ var VALID_PARTS_PER_ROLE = {
 	],
 	system: ["text"]
 };
-function validateChatHistory(history) {
-	let prevContent = false;
-	for (const currContent of history) {
-		const { role, parts } = currContent;
-		if (!prevContent && role !== "user") throw new GoogleGenerativeAIError(`First content should be with role 'user', got ${role}`);
-		if (!POSSIBLE_ROLES.includes(role)) throw new GoogleGenerativeAIError(`Each item should include role field. Got ${role} but valid roles are: ${JSON.stringify(POSSIBLE_ROLES)}`);
-		if (!Array.isArray(parts)) throw new GoogleGenerativeAIError("Content should have 'parts' property with an array of Parts");
-		if (parts.length === 0) throw new GoogleGenerativeAIError("Each Content should have at least one part");
-		const countFields = {
+function pe(e) {
+	let t = !1;
+	for (let n of e) {
+		let { role: e, parts: r } = n;
+		if (!t && e !== "user") throw new _(`First content should be with role 'user', got ${e}`);
+		if (!l.includes(e)) throw new _(`Each item should include role field. Got ${e} but valid roles are: ${JSON.stringify(l)}`);
+		if (!Array.isArray(r)) throw new _("Content should have 'parts' property with an array of Parts");
+		if (r.length === 0) throw new _("Each Content should have at least one part");
+		let i = {
 			text: 0,
 			inlineData: 0,
 			functionCall: 0,
@@ -882,306 +417,129 @@ function validateChatHistory(history) {
 			executableCode: 0,
 			codeExecutionResult: 0
 		};
-		for (const part of parts) for (const key of VALID_PART_FIELDS) if (key in part) countFields[key] += 1;
-		const validParts = VALID_PARTS_PER_ROLE[role];
-		for (const key of VALID_PART_FIELDS) if (!validParts.includes(key) && countFields[key] > 0) throw new GoogleGenerativeAIError(`Content with role '${role}' can't contain '${key}' part`);
-		prevContent = true;
+		for (let e of r) for (let t of q) t in e && (i[t] += 1);
+		let a = fe[e];
+		for (let t of q) if (!a.includes(t) && i[t] > 0) throw new _(`Content with role '${e}' can't contain '${t}' part`);
+		t = !0;
 	}
 }
-/**
-* Returns true if the response is valid (could be appended to the history), flase otherwise.
-*/
-function isValidResponse(response) {
-	var _a;
-	if (response.candidates === void 0 || response.candidates.length === 0) return false;
-	const content = (_a = response.candidates[0]) === null || _a === void 0 ? void 0 : _a.content;
-	if (content === void 0) return false;
-	if (content.parts === void 0 || content.parts.length === 0) return false;
-	for (const part of content.parts) {
-		if (part === void 0 || Object.keys(part).length === 0) return false;
-		if (part.text !== void 0 && part.text === "") return false;
-	}
-	return true;
+function J(e) {
+	if (e.candidates === void 0 || e.candidates.length === 0) return !1;
+	let t = e.candidates[0]?.content;
+	if (t === void 0 || t.parts === void 0 || t.parts.length === 0) return !1;
+	for (let e of t.parts) if (e === void 0 || Object.keys(e).length === 0 || e.text !== void 0 && e.text === "") return !1;
+	return !0;
 }
-/**
-* @license
-* Copyright 2024 Google LLC
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*   http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*/
-/**
-* Do not log a message for this error.
-*/
-var SILENT_ERROR = "SILENT_ERROR";
-/**
-* ChatSession class that enables sending chat messages and stores
-* history of sent and received messages so far.
-*
-* @public
-*/
-var ChatSession = class {
-	constructor(apiKey, model, params, _requestOptions = {}) {
-		this.model = model;
-		this.params = params;
-		this._requestOptions = _requestOptions;
-		this._history = [];
-		this._sendPromise = Promise.resolve();
-		this._apiKey = apiKey;
-		if (params === null || params === void 0 ? void 0 : params.history) {
-			validateChatHistory(params.history);
-			this._history = params.history;
-		}
+var Y = "SILENT_ERROR", me = class {
+	constructor(e, t, n, r = {}) {
+		this.model = t, this.params = n, this._requestOptions = r, this._history = [], this._sendPromise = Promise.resolve(), this._apiKey = e, n?.history && (pe(n.history), this._history = n.history);
 	}
-	/**
-	* Gets the chat history so far. Blocked prompts are not added to history.
-	* Blocked candidates are not added to history, nor are the prompts that
-	* generated them.
-	*/
 	async getHistory() {
-		await this._sendPromise;
-		return this._history;
+		return await this._sendPromise, this._history;
 	}
-	/**
-	* Sends a chat message and receives a non-streaming
-	* {@link GenerateContentResult}.
-	*
-	* Fields set in the optional {@link SingleRequestOptions} parameter will
-	* take precedence over the {@link RequestOptions} values provided to
-	* {@link GoogleGenerativeAI.getGenerativeModel }.
-	*/
-	async sendMessage(request, requestOptions = {}) {
-		var _a, _b, _c, _d, _e, _f;
+	async sendMessage(e, t = {}) {
 		await this._sendPromise;
-		const newContent = formatNewContent(request);
-		const generateContentRequest = {
-			safetySettings: (_a = this.params) === null || _a === void 0 ? void 0 : _a.safetySettings,
-			generationConfig: (_b = this.params) === null || _b === void 0 ? void 0 : _b.generationConfig,
-			tools: (_c = this.params) === null || _c === void 0 ? void 0 : _c.tools,
-			toolConfig: (_d = this.params) === null || _d === void 0 ? void 0 : _d.toolConfig,
-			systemInstruction: (_e = this.params) === null || _e === void 0 ? void 0 : _e.systemInstruction,
-			cachedContent: (_f = this.params) === null || _f === void 0 ? void 0 : _f.cachedContent,
-			contents: [...this._history, newContent]
-		};
-		const chatSessionRequestOptions = Object.assign(Object.assign({}, this._requestOptions), requestOptions);
-		let finalResult;
-		this._sendPromise = this._sendPromise.then(() => generateContent(this._apiKey, this.model, generateContentRequest, chatSessionRequestOptions)).then((result) => {
-			var _a;
-			if (isValidResponse(result.response)) {
-				this._history.push(newContent);
-				const responseContent = Object.assign({
+		let n = G(e), r = {
+			safetySettings: this.params?.safetySettings,
+			generationConfig: this.params?.generationConfig,
+			tools: this.params?.tools,
+			toolConfig: this.params?.toolConfig,
+			systemInstruction: this.params?.systemInstruction,
+			cachedContent: this.params?.cachedContent,
+			contents: [...this._history, n]
+		}, i = Object.assign(Object.assign({}, this._requestOptions), t), a;
+		return this._sendPromise = this._sendPromise.then(() => U(this._apiKey, this.model, r, i)).then((e) => {
+			if (J(e.response)) {
+				this._history.push(n);
+				let t = Object.assign({
 					parts: [],
 					role: "model"
-				}, (_a = result.response.candidates) === null || _a === void 0 ? void 0 : _a[0].content);
-				this._history.push(responseContent);
+				}, e.response.candidates?.[0].content);
+				this._history.push(t);
 			} else {
-				const blockErrorMessage = formatBlockErrorMessage(result.response);
-				if (blockErrorMessage) console.warn(`sendMessage() was unsuccessful. ${blockErrorMessage}. Inspect response object for details.`);
+				let t = N(e.response);
+				t && console.warn(`sendMessage() was unsuccessful. ${t}. Inspect response object for details.`);
 			}
-			finalResult = result;
+			a = e;
 		}).catch((e) => {
-			this._sendPromise = Promise.resolve();
-			throw e;
-		});
-		await this._sendPromise;
-		return finalResult;
+			throw this._sendPromise = Promise.resolve(), e;
+		}), await this._sendPromise, a;
 	}
-	/**
-	* Sends a chat message and receives the response as a
-	* {@link GenerateContentStreamResult} containing an iterable stream
-	* and a response promise.
-	*
-	* Fields set in the optional {@link SingleRequestOptions} parameter will
-	* take precedence over the {@link RequestOptions} values provided to
-	* {@link GoogleGenerativeAI.getGenerativeModel }.
-	*/
-	async sendMessageStream(request, requestOptions = {}) {
-		var _a, _b, _c, _d, _e, _f;
+	async sendMessageStream(e, t = {}) {
 		await this._sendPromise;
-		const newContent = formatNewContent(request);
-		const generateContentRequest = {
-			safetySettings: (_a = this.params) === null || _a === void 0 ? void 0 : _a.safetySettings,
-			generationConfig: (_b = this.params) === null || _b === void 0 ? void 0 : _b.generationConfig,
-			tools: (_c = this.params) === null || _c === void 0 ? void 0 : _c.tools,
-			toolConfig: (_d = this.params) === null || _d === void 0 ? void 0 : _d.toolConfig,
-			systemInstruction: (_e = this.params) === null || _e === void 0 ? void 0 : _e.systemInstruction,
-			cachedContent: (_f = this.params) === null || _f === void 0 ? void 0 : _f.cachedContent,
-			contents: [...this._history, newContent]
-		};
-		const chatSessionRequestOptions = Object.assign(Object.assign({}, this._requestOptions), requestOptions);
-		const streamPromise = generateContentStream(this._apiKey, this.model, generateContentRequest, chatSessionRequestOptions);
-		this._sendPromise = this._sendPromise.then(() => streamPromise).catch((_ignored) => {
-			throw new Error(SILENT_ERROR);
-		}).then((streamResult) => streamResult.response).then((response) => {
-			if (isValidResponse(response)) {
-				this._history.push(newContent);
-				const responseContent = Object.assign({}, response.candidates[0].content);
-				if (!responseContent.role) responseContent.role = "model";
-				this._history.push(responseContent);
+		let n = G(e), r = {
+			safetySettings: this.params?.safetySettings,
+			generationConfig: this.params?.generationConfig,
+			tools: this.params?.tools,
+			toolConfig: this.params?.toolConfig,
+			systemInstruction: this.params?.systemInstruction,
+			cachedContent: this.params?.cachedContent,
+			contents: [...this._history, n]
+		}, i = Object.assign(Object.assign({}, this._requestOptions), t), a = H(this._apiKey, this.model, r, i);
+		return this._sendPromise = this._sendPromise.then(() => a).catch((e) => {
+			throw Error(Y);
+		}).then((e) => e.response).then((e) => {
+			if (J(e)) {
+				this._history.push(n);
+				let t = Object.assign({}, e.candidates[0].content);
+				t.role ||= "model", this._history.push(t);
 			} else {
-				const blockErrorMessage = formatBlockErrorMessage(response);
-				if (blockErrorMessage) console.warn(`sendMessageStream() was unsuccessful. ${blockErrorMessage}. Inspect response object for details.`);
+				let t = N(e);
+				t && console.warn(`sendMessageStream() was unsuccessful. ${t}. Inspect response object for details.`);
 			}
 		}).catch((e) => {
-			if (e.message !== SILENT_ERROR) console.error(e);
-		});
-		return streamPromise;
+			e.message !== Y && console.error(e);
+		}), a;
 	}
 };
-/**
-* @license
-* Copyright 2024 Google LLC
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*   http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*/
-async function countTokens(apiKey, model, params, singleRequestOptions) {
-	return (await makeModelRequest(model, Task.COUNT_TOKENS, apiKey, false, JSON.stringify(params), singleRequestOptions)).json();
+async function he(e, t, n, r) {
+	return (await O(t, C.COUNT_TOKENS, e, !1, JSON.stringify(n), r)).json();
 }
-/**
-* @license
-* Copyright 2024 Google LLC
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*   http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*/
-async function embedContent(apiKey, model, params, requestOptions) {
-	return (await makeModelRequest(model, Task.EMBED_CONTENT, apiKey, false, JSON.stringify(params), requestOptions)).json();
+async function ge(e, t, n, r) {
+	return (await O(t, C.EMBED_CONTENT, e, !1, JSON.stringify(n), r)).json();
 }
-async function batchEmbedContents(apiKey, model, params, requestOptions) {
-	const requestsWithModel = params.requests.map((request) => {
-		return Object.assign(Object.assign({}, request), { model });
-	});
-	return (await makeModelRequest(model, Task.BATCH_EMBED_CONTENTS, apiKey, false, JSON.stringify({ requests: requestsWithModel }), requestOptions)).json();
+async function _e(e, t, n, r) {
+	let i = n.requests.map((e) => Object.assign(Object.assign({}, e), { model: t }));
+	return (await O(t, C.BATCH_EMBED_CONTENTS, e, !1, JSON.stringify({ requests: i }), r)).json();
 }
-/**
-* @license
-* Copyright 2024 Google LLC
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*   http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*/
-/**
-* Class for generative model APIs.
-* @public
-*/
-var GenerativeModel = class {
-	constructor(apiKey, modelParams, _requestOptions = {}) {
-		this.apiKey = apiKey;
-		this._requestOptions = _requestOptions;
-		if (modelParams.model.includes("/")) this.model = modelParams.model;
-		else this.model = `models/${modelParams.model}`;
-		this.generationConfig = modelParams.generationConfig || {};
-		this.safetySettings = modelParams.safetySettings || [];
-		this.tools = modelParams.tools;
-		this.toolConfig = modelParams.toolConfig;
-		this.systemInstruction = formatSystemInstruction(modelParams.systemInstruction);
-		this.cachedContent = modelParams.cachedContent;
+var X = class {
+	constructor(e, t, n = {}) {
+		this.apiKey = e, this._requestOptions = n, this.model = t.model.includes("/") ? t.model : `models/${t.model}`, this.generationConfig = t.generationConfig || {}, this.safetySettings = t.safetySettings || [], this.tools = t.tools, this.toolConfig = t.toolConfig, this.systemInstruction = W(t.systemInstruction), this.cachedContent = t.cachedContent;
 	}
-	/**
-	* Makes a single non-streaming call to the model
-	* and returns an object containing a single {@link GenerateContentResponse}.
-	*
-	* Fields set in the optional {@link SingleRequestOptions} parameter will
-	* take precedence over the {@link RequestOptions} values provided to
-	* {@link GoogleGenerativeAI.getGenerativeModel }.
-	*/
-	async generateContent(request, requestOptions = {}) {
-		var _a;
-		const formattedParams = formatGenerateContentInput(request);
-		const generativeModelRequestOptions = Object.assign(Object.assign({}, this._requestOptions), requestOptions);
-		return generateContent(this.apiKey, this.model, Object.assign({
+	async generateContent(e, t = {}) {
+		let n = K(e), r = Object.assign(Object.assign({}, this._requestOptions), t);
+		return U(this.apiKey, this.model, Object.assign({
 			generationConfig: this.generationConfig,
 			safetySettings: this.safetySettings,
 			tools: this.tools,
 			toolConfig: this.toolConfig,
 			systemInstruction: this.systemInstruction,
-			cachedContent: (_a = this.cachedContent) === null || _a === void 0 ? void 0 : _a.name
-		}, formattedParams), generativeModelRequestOptions);
+			cachedContent: this.cachedContent?.name
+		}, n), r);
 	}
-	/**
-	* Makes a single streaming call to the model and returns an object
-	* containing an iterable stream that iterates over all chunks in the
-	* streaming response as well as a promise that returns the final
-	* aggregated response.
-	*
-	* Fields set in the optional {@link SingleRequestOptions} parameter will
-	* take precedence over the {@link RequestOptions} values provided to
-	* {@link GoogleGenerativeAI.getGenerativeModel }.
-	*/
-	async generateContentStream(request, requestOptions = {}) {
-		var _a;
-		const formattedParams = formatGenerateContentInput(request);
-		const generativeModelRequestOptions = Object.assign(Object.assign({}, this._requestOptions), requestOptions);
-		return generateContentStream(this.apiKey, this.model, Object.assign({
+	async generateContentStream(e, t = {}) {
+		let n = K(e), r = Object.assign(Object.assign({}, this._requestOptions), t);
+		return H(this.apiKey, this.model, Object.assign({
 			generationConfig: this.generationConfig,
 			safetySettings: this.safetySettings,
 			tools: this.tools,
 			toolConfig: this.toolConfig,
 			systemInstruction: this.systemInstruction,
-			cachedContent: (_a = this.cachedContent) === null || _a === void 0 ? void 0 : _a.name
-		}, formattedParams), generativeModelRequestOptions);
+			cachedContent: this.cachedContent?.name
+		}, n), r);
 	}
-	/**
-	* Gets a new {@link ChatSession} instance which can be used for
-	* multi-turn chats.
-	*/
-	startChat(startChatParams) {
-		var _a;
-		return new ChatSession(this.apiKey, this.model, Object.assign({
+	startChat(e) {
+		return new me(this.apiKey, this.model, Object.assign({
 			generationConfig: this.generationConfig,
 			safetySettings: this.safetySettings,
 			tools: this.tools,
 			toolConfig: this.toolConfig,
 			systemInstruction: this.systemInstruction,
-			cachedContent: (_a = this.cachedContent) === null || _a === void 0 ? void 0 : _a.name
-		}, startChatParams), this._requestOptions);
+			cachedContent: this.cachedContent?.name
+		}, e), this._requestOptions);
 	}
-	/**
-	* Counts the tokens in the provided request.
-	*
-	* Fields set in the optional {@link SingleRequestOptions} parameter will
-	* take precedence over the {@link RequestOptions} values provided to
-	* {@link GoogleGenerativeAI.getGenerativeModel }.
-	*/
-	async countTokens(request, requestOptions = {}) {
-		const formattedParams = formatCountTokensInput(request, {
+	async countTokens(e, t = {}) {
+		let n = ue(e, {
 			model: this.model,
 			generationConfig: this.generationConfig,
 			safetySettings: this.safetySettings,
@@ -1189,98 +547,48 @@ var GenerativeModel = class {
 			toolConfig: this.toolConfig,
 			systemInstruction: this.systemInstruction,
 			cachedContent: this.cachedContent
-		});
-		const generativeModelRequestOptions = Object.assign(Object.assign({}, this._requestOptions), requestOptions);
-		return countTokens(this.apiKey, this.model, formattedParams, generativeModelRequestOptions);
+		}), r = Object.assign(Object.assign({}, this._requestOptions), t);
+		return he(this.apiKey, this.model, n, r);
 	}
-	/**
-	* Embeds the provided content.
-	*
-	* Fields set in the optional {@link SingleRequestOptions} parameter will
-	* take precedence over the {@link RequestOptions} values provided to
-	* {@link GoogleGenerativeAI.getGenerativeModel }.
-	*/
-	async embedContent(request, requestOptions = {}) {
-		const formattedParams = formatEmbedContentInput(request);
-		const generativeModelRequestOptions = Object.assign(Object.assign({}, this._requestOptions), requestOptions);
-		return embedContent(this.apiKey, this.model, formattedParams, generativeModelRequestOptions);
+	async embedContent(e, t = {}) {
+		let n = de(e), r = Object.assign(Object.assign({}, this._requestOptions), t);
+		return ge(this.apiKey, this.model, n, r);
 	}
-	/**
-	* Embeds an array of {@link EmbedContentRequest}s.
-	*
-	* Fields set in the optional {@link SingleRequestOptions} parameter will
-	* take precedence over the {@link RequestOptions} values provided to
-	* {@link GoogleGenerativeAI.getGenerativeModel }.
-	*/
-	async batchEmbedContents(batchEmbedContentRequest, requestOptions = {}) {
-		const generativeModelRequestOptions = Object.assign(Object.assign({}, this._requestOptions), requestOptions);
-		return batchEmbedContents(this.apiKey, this.model, batchEmbedContentRequest, generativeModelRequestOptions);
+	async batchEmbedContents(e, t = {}) {
+		let n = Object.assign(Object.assign({}, this._requestOptions), t);
+		return _e(this.apiKey, this.model, e, n);
 	}
-};
-/**
-* @license
-* Copyright 2024 Google LLC
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*   http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*/
-/**
-* Top-level class for this SDK
-* @public
-*/
-var GoogleGenerativeAI = class {
-	constructor(apiKey) {
-		this.apiKey = apiKey;
+}, ve = class {
+	constructor(e) {
+		this.apiKey = e;
 	}
-	/**
-	* Gets a {@link GenerativeModel} instance for the provided model name.
-	*/
-	getGenerativeModel(modelParams, requestOptions) {
-		if (!modelParams.model) throw new GoogleGenerativeAIError("Must provide a model name. Example: genai.getGenerativeModel({ model: 'my-model-name' })");
-		return new GenerativeModel(this.apiKey, modelParams, requestOptions);
+	getGenerativeModel(e, t) {
+		if (!e.model) throw new _("Must provide a model name. Example: genai.getGenerativeModel({ model: 'my-model-name' })");
+		return new X(this.apiKey, e, t);
 	}
-	/**
-	* Creates a {@link GenerativeModel} instance from provided content cache.
-	*/
-	getGenerativeModelFromCachedContent(cachedContent, modelParams, requestOptions) {
-		if (!cachedContent.name) throw new GoogleGenerativeAIRequestInputError("Cached content must contain a `name` field.");
-		if (!cachedContent.model) throw new GoogleGenerativeAIRequestInputError("Cached content must contain a `model` field.");
-		for (const key of ["model", "systemInstruction"]) if ((modelParams === null || modelParams === void 0 ? void 0 : modelParams[key]) && cachedContent[key] && (modelParams === null || modelParams === void 0 ? void 0 : modelParams[key]) !== cachedContent[key]) {
-			if (key === "model") {
-				if ((modelParams.model.startsWith("models/") ? modelParams.model.replace("models/", "") : modelParams.model) === (cachedContent.model.startsWith("models/") ? cachedContent.model.replace("models/", "") : cachedContent.model)) continue;
-			}
-			throw new GoogleGenerativeAIRequestInputError(`Different value for "${key}" specified in modelParams (${modelParams[key]}) and cachedContent (${cachedContent[key]})`);
+	getGenerativeModelFromCachedContent(e, t, n) {
+		if (!e.name) throw new b("Cached content must contain a `name` field.");
+		if (!e.model) throw new b("Cached content must contain a `model` field.");
+		for (let n of ["model", "systemInstruction"]) if (t?.[n] && e[n] && t?.[n] !== e[n]) {
+			if (n === "model" && (t.model.startsWith("models/") ? t.model.replace("models/", "") : t.model) === (e.model.startsWith("models/") ? e.model.replace("models/", "") : e.model)) continue;
+			throw new b(`Different value for "${n}" specified in modelParams (${t[n]}) and cachedContent (${e[n]})`);
 		}
-		const modelParamsFromCache = Object.assign(Object.assign({}, modelParams), {
-			model: cachedContent.model,
-			tools: cachedContent.tools,
-			toolConfig: cachedContent.toolConfig,
-			systemInstruction: cachedContent.systemInstruction,
-			cachedContent
+		let r = Object.assign(Object.assign({}, t), {
+			model: e.model,
+			tools: e.tools,
+			toolConfig: e.toolConfig,
+			systemInstruction: e.systemInstruction,
+			cachedContent: e
 		});
-		return new GenerativeModel(this.apiKey, modelParamsFromCache, requestOptions);
+		return new X(this.apiKey, r, n);
 	}
-};
-//#endregion
-//#region src/main/llm.ts
-var apiKey = process.env.GEMINI_API_KEY || "";
-var genAI = new GoogleGenerativeAI(apiKey);
-async function invokeCopilot(prompt, currentConfig) {
-	if (!apiKey) throw new Error("No se ha configurado la clave API de Gemini. Exporta GEMINI_API_KEY en tu terminal.");
-	const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-	const systemPrompt = `
+}, Z = process.env.GEMINI_API_KEY || "", ye = new ve(Z);
+async function be(e, t) {
+	if (!Z) throw Error("No se ha configurado la clave API de Gemini. Exporta GEMINI_API_KEY en tu terminal.");
+	let n = ye.getGenerativeModel({ model: "gemini-1.5-flash" }), r = `
   Eres un experto modificador de motos (Copiloto de ModSim).
   El usuario te pide hacer una modificación a su moto.
-  Configuración actual y piezas modificadas hasta ahora: ${JSON.stringify(currentConfig)}
+  Configuración actual y piezas modificadas hasta ahora: ${JSON.stringify(t)}
 
   Tu trabajo es interpretar su solicitud y responder EXCLUSIVAMENTE en formato JSON.
   
@@ -1298,52 +606,48 @@ async function invokeCopilot(prompt, currentConfig) {
   No incluyas formato markdown como \`\`\`json. Solo devuelve el objeto puro.
   `;
 	try {
-		const jsonStr = (await model.generateContent(`${systemPrompt}\n\nUsuario: ${prompt}`)).response.text().replace(/```json/gi, "").replace(/```/gi, "").trim();
-		return JSON.parse(jsonStr);
-	} catch (error) {
-		throw new Error(`Error en el copiloto: ${error.message}`);
+		let t = (await n.generateContent(`${r}\n\nUsuario: ${e}`)).response.text().replace(/```json/gi, "").replace(/```/gi, "").trim();
+		return JSON.parse(t);
+	} catch (e) {
+		throw Error(`Error en el copiloto: ${e.message}`);
 	}
 }
 //#endregion
 //#region src/main/index.ts
-var __filename = fileURLToPath(import.meta.url);
-var __dirname = path.dirname(__filename);
-process.env.DIST = path.join(__dirname, "../");
-process.env.VITE_PUBLIC = app.isPackaged ? process.env.DIST : path.join(process.env.DIST, "../public");
-var win;
-function createWindow() {
-	win = new BrowserWindow({
+var xe = a(import.meta.url), Q = i.dirname(xe);
+process.env.DIST = i.join(Q, "../"), process.env.VITE_PUBLIC = n.isPackaged ? process.env.DIST : i.join(process.env.DIST, "../public");
+var $;
+function Se() {
+	$ = new e({
 		width: 1200,
 		height: 800,
+		minWidth: 1100,
+		minHeight: 700,
 		webPreferences: {
-			preload: path.join(__dirname, "preload.mjs"),
-			contextIsolation: true,
-			nodeIntegration: false
+			preload: i.join(Q, "preload.mjs"),
+			contextIsolation: !0,
+			nodeIntegration: !1
 		},
 		backgroundColor: "#0f172a",
 		title: "ModSim"
-	});
-	if (process.env.VITE_DEV_SERVER_URL) win.loadURL(process.env.VITE_DEV_SERVER_URL);
-	else win.loadFile(path.join(process.env.DIST, "index.html"));
+	}), t.setApplicationMenu(null), process.env.VITE_DEV_SERVER_URL ? $.loadURL(process.env.VITE_DEV_SERVER_URL) : $.loadFile(i.join(process.env.DIST || "", "index.html"));
 }
-app.on("ready", () => {
-	createWindow();
-	ipcMain.handle("ask-copilot", async (_event, prompt, currentConfig) => {
+n.on("ready", () => {
+	Se(), r.handle("ask-copilot", async (e, t, n) => {
 		try {
 			return {
-				success: true,
-				data: await invokeCopilot(prompt, currentConfig)
+				success: !0,
+				data: await be(t, n)
 			};
-		} catch (err) {
+		} catch (e) {
 			return {
-				success: false,
-				error: err.message
+				success: !1,
+				error: e.message
 			};
 		}
 	});
-});
-app.on("window-all-closed", () => {
-	if (process.platform !== "darwin") app.quit();
+}), n.on("window-all-closed", () => {
+	process.platform !== "darwin" && n.quit();
 });
 //#endregion
 export {};

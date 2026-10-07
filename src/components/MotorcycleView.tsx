@@ -1,4 +1,4 @@
-import React from 'react';
+
 import { motion } from 'framer-motion';
 import { useStore } from '../store/useStore';
 import { calculateTireDiameter } from '../engine';

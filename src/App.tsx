@@ -1,4 +1,4 @@
-import React from 'react';
+
 import { StatsPanel } from './components/StatsPanel';
 import { MotorcycleView } from './components/MotorcycleView';
 import { Copilot } from './components/Copilot';

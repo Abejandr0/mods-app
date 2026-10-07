@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { useStore } from '../store/useStore';
 import { Settings, Gauge, RefreshCw, Activity } from 'lucide-react';
 import { 

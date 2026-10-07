@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { TireSize, Transmission, EngineSpecs } from '../types';
+import type { TireSize, Transmission } from '../types';
 import { 
   calculateTireDiameter, 
   calculateTireCircumference, 

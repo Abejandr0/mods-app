@@ -9,7 +9,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "start": "electron ."
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

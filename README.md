@@ -1,32 +1,49 @@
-# React + TypeScript + Vite
+# ModSim - Simulador de Modificaciones de Motocicletas con IA
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+ModSim es una aplicación de escritorio nativa construida con **Electron, Vite, React y TypeScript**. Su objetivo es permitir a los motociclistas simular modificaciones mecánicas (cambio de kit de arrastre, cambio de medidas de llanta) y visualizar matemáticamente su impacto en tiempo real. 
 
-Currently, two official plugins are available:
+La aplicación cuenta con un entorno físico puro determinista, una interfaz interactiva fluida (framer-motion) y un asistente Copiloto IA (Gemini) integrado de manera segura en el proceso principal de Electron.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 🚀 Requisitos previos
 
-## React Compiler
+- **Node.js** (v18 o superior recomendado)
+- **Clave API de Gemini** (Opcional, requerida únicamente si deseas usar la IA conectada a la red; la aplicación también funciona offline con sugerencias pre-calculadas).
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 🛠️ Instalación y ejecución
 
-## Expanding the Oxlint configuration
+1. **Instalar dependencias**:
+   ```bash
+   npm install
+   ```
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+2. **Ejecutar en entorno de desarrollo**:
+   Levanta el servidor de React (Vite) y abre automáticamente la ventana de Electron con Hot Module Replacement (HMR).
+   ```bash
+   export GEMINI_API_KEY="tu_api_key_gemini" # Opcional
+   npm run dev
+   ```
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
-```
+3. **Ejecutar en entorno de producción**:
+   Construye la aplicación y la abre usando los archivos transpilados (modo `start`).
+   ```bash
+   npm run build
+   npm start
+   ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## 🧪 Pruebas y Linter
+
+- **Pruebas unitarias** del motor físico (Vitest):
+  ```bash
+  npm test
+  ```
+- **Linter** (Oxlint para chequeos súper rápidos):
+  ```bash
+  npm run lint
+  ```
+
+## 🏗️ Arquitectura de Software
+
+El proyecto se divide estrictamente en 3 capas:
+1. `/src/engine`: El cerebro matemático. Funciones puras, sin estado y sin dependencias de UI ni de Node/Electron.
+2. `/src/renderer`: La capa visual con React y Zustand para gestión de estado.
+3. `/src/main`: El proceso privilegiado de Electron (Main process) que tiene acceso al sistema y se comunica con el Renderer mediante IPC seguro (`contextBridge`).

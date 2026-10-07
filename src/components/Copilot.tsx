@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useStore } from '../store/useStore';
 import { MessageSquare, Send, Bot, User, AlertTriangle } from 'lucide-react';
 
