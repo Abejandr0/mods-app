@@ -47,3 +47,7 @@ El proyecto se divide estrictamente en 3 capas:
 1. `/src/engine`: El cerebro matemático. Funciones puras, sin estado y sin dependencias de UI ni de Node/Electron.
 2. `/src/renderer`: La capa visual con React y Zustand para gestión de estado.
 3. `/src/main`: El proceso privilegiado de Electron (Main process) que tiene acceso al sistema y se comunica con el Renderer mediante IPC seguro (`contextBridge`).
+
+## Taller virtual con edición de fotos
+
+El flujo de simulación con foto, chat IA, selección de pieza e inpainting se encuentra en [ai-workshop](ai-workshop/README.md). La app de escritorio y simulación física existente permanece en la raíz del repositorio.

@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Python / credentials for the AI workshop
+__pycache__/
+*.py[cod]
+.venv/
+.env
