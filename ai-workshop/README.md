@@ -1,12 +1,16 @@
 # Taller virtual de motos
 
-Aplicación web React + TypeScript con un backend FastAPI. Permite escoger un modelo, cargar una foto, describir una modificación en español, seleccionar la pieza en la foto y revisar la máscara antes de aplicar el inpainting.
+Aplicación web React + TypeScript con un backend FastAPI. La homepage permite entrar al taller al instante con una moto de muestra por categoría o subir una foto propia. El chat usa Claude; SAM 2 segmenta la pieza y Flux Fill aplica el cambio. No hay simulación de respuestas de IA: sin credenciales, el producto informa qué configuración falta.
+
+Las fotos de muestra son visuales generados para probar la interfaz; representan una categoría y no son imágenes exactas de los modelos anunciados.
 
 ## Requisitos
 
 - Python 3.10 o superior
 - Node.js 20.19 o superior (o 22.12+)
 - Claves de fal.ai (`FAL_KEY`) y Anthropic (`ANTHROPIC_API_KEY`)
+
+El registro es opcional. Las cuentas se guardan en SQLite local (`backend/data/workshop.sqlite3`), con contraseñas derivadas mediante PBKDF2 y sesión en cookie HttpOnly. El historial de imágenes no se sincroniza con la cuenta ni se guarda en nube.
 
 ## Ejecutar en desarrollo
 
@@ -30,6 +34,10 @@ npm run dev
 ```
 
 Abre la URL que muestra Vite (normalmente http://localhost:5173).
+
+## Cuentas
+
+En la barra superior puedes crear una cuenta o iniciar sesión. El acceso no bloquea la prueba del taller. Las cuentas son locales a la instalación; para una aplicación pública se debe configurar una base de datos central y HTTPS (`SECURE_COOKIES=true`).
 
 ## Probar la edición sin la interfaz
 

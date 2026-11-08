@@ -28,3 +28,4 @@ __pycache__/
 *.py[cod]
 .venv/
 .env
+ai-workshop/backend/data/

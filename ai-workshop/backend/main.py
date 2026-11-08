@@ -1,8 +1,10 @@
-import io, json, os, re
+import hashlib, io, json, os, re, secrets, sqlite3
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 import fal_client, httpx
 from anthropic import Anthropic, APIConnectionError, APITimeoutError, APIStatusError
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response as FastAPIResponse, UploadFile
 from fastapi.responses import Response
 from PIL import Image, ImageFilter
 from pydantic import BaseModel
@@ -10,6 +12,10 @@ from pydantic import BaseModel
 load_dotenv()
 app = FastAPI()
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5-5")
+DATA_DIR = Path(os.getenv("WORKSHOP_DATA_DIR", Path(__file__).parent / "data"))
+DB_PATH = DATA_DIR / "workshop.sqlite3"
+SESSION_COOKIE = "motomod_session"
+SESSION_DAYS = 14
 
 CATALOG = [
     {"id": "gixxer-sf-250", "name": "Suzuki Gixxer SF 250", "type": "Deportiva"},
@@ -34,9 +40,145 @@ class Chat(BaseModel):
     messages: list[dict]
 
 
+class AccountInput(BaseModel):
+    name: str
+    email: str
+    password: str
+
+
+class LoginInput(BaseModel):
+    email: str
+    password: str
+
+
+def db_connect():
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    db = sqlite3.connect(DB_PATH)
+    db.row_factory = sqlite3.Row
+    db.execute("PRAGMA foreign_keys = ON")
+    return db
+
+
+def init_auth_db():
+    with db_connect() as db:
+        db.executescript("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL UNIQUE,
+                salt BLOB NOT NULL,
+                password_hash BLOB NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS sessions (
+                token_hash TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                expires_at TEXT NOT NULL
+            );
+        """)
+
+
+init_auth_db()
+
+
+def password_hash(password: str, salt: bytes) -> bytes:
+    return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 310_000)
+
+
+def session_user(request: Request):
+    token = request.cookies.get(SESSION_COOKIE)
+    if not token:
+        return None
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    with db_connect() as db:
+        row = db.execute("""
+            SELECT users.id, users.name, users.email
+            FROM sessions JOIN users ON users.id = sessions.user_id
+            WHERE sessions.token_hash = ? AND sessions.expires_at > ?
+        """, (token_hash, datetime.now(timezone.utc).isoformat())).fetchone()
+    return dict(row) if row else None
+
+
+def issue_session(user_id: int, response: FastAPIResponse):
+    token = secrets.token_urlsafe(32)
+    expires = datetime.now(timezone.utc) + timedelta(days=SESSION_DAYS)
+    with db_connect() as db:
+        db.execute("DELETE FROM sessions WHERE expires_at <= ?", (datetime.now(timezone.utc).isoformat(),))
+        db.execute("INSERT INTO sessions(token_hash, user_id, expires_at) VALUES (?, ?, ?)",
+                   (hashlib.sha256(token.encode()).hexdigest(), user_id, expires.isoformat()))
+    response.set_cookie(
+        SESSION_COOKIE, token, max_age=SESSION_DAYS * 24 * 3600, httponly=True,
+        secure=os.getenv("SECURE_COOKIES", "0").lower() in ("1", "true", "yes"),
+        samesite="lax", path="/",
+    )
+
+
+def public_user(user):
+    return {"id": user["id"], "name": user["name"], "email": user["email"]}
+
+
+@app.post("/api/auth/signup")
+def signup(body: AccountInput, response: FastAPIResponse):
+    name, email, password = body.name.strip(), body.email.strip().lower(), body.password
+    if len(name) < 2 or len(name) > 60:
+        raise HTTPException(422, "Escribe un nombre de entre 2 y 60 caracteres.")
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
+        raise HTTPException(422, "Escribe un correo electrónico válido.")
+    if len(password) < 10:
+        raise HTTPException(422, "Usa una contraseña de al menos 10 caracteres.")
+    salt = secrets.token_bytes(16)
+    try:
+        with db_connect() as db:
+            cursor = db.execute(
+                "INSERT INTO users(name, email, salt, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+                (name, email, salt, password_hash(password, salt), datetime.now(timezone.utc).isoformat()),
+            )
+            user_id = cursor.lastrowid
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(409, "Ya existe una cuenta con ese correo. Inicia sesión o usa otro correo.") from exc
+    issue_session(user_id, response)
+    return {"user": {"id": user_id, "name": name, "email": email}}
+
+
+@app.post("/api/auth/login")
+def login(body: LoginInput, response: FastAPIResponse):
+    email = body.email.strip().lower()
+    with db_connect() as db:
+        row = db.execute("SELECT id, name, email, salt, password_hash FROM users WHERE email = ?", (email,)).fetchone()
+    if not row or not secrets.compare_digest(password_hash(body.password, row["salt"]), row["password_hash"]):
+        raise HTTPException(401, "Correo o contraseña incorrectos.")
+    issue_session(row["id"], response)
+    return {"user": public_user(row)}
+
+
+@app.get("/api/auth/me")
+def me(request: Request):
+    user = session_user(request)
+    return {"user": public_user(user) if user else None}
+
+
+@app.post("/api/auth/logout")
+def logout(request: Request, response: FastAPIResponse):
+    token = request.cookies.get(SESSION_COOKIE)
+    if token:
+        with db_connect() as db:
+            db.execute("DELETE FROM sessions WHERE token_hash = ?", (hashlib.sha256(token.encode()).hexdigest(),))
+    response.delete_cookie(SESSION_COOKIE, path="/", httponly=True, samesite="lax")
+    return {"ok": True}
+
+
 @app.get("/api/catalog")
 def catalog():
     return CATALOG
+
+
+@app.get("/api/status")
+def service_status():
+    return {
+        "chat_ready": bool(os.getenv("ANTHROPIC_API_KEY")),
+        "image_ready": bool(os.getenv("FAL_KEY")),
+        "ai_is_simulated": False,
+    }
 
 
 @app.post("/api/chat")
@@ -55,7 +197,7 @@ def chat(body: Chat):
                 normalized[-1]["content"] += "\n" + content
             else:
                 normalized.append({"role": role, "content": content})
-        r = Anthropic().messages.create(
+        r = Anthropic(timeout=90).messages.create(
             model=ANTHROPIC_MODEL,
             max_tokens=500,
             system=SYSTEM.replace("{model}", body.model),
