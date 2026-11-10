@@ -126,7 +126,7 @@ export default function App() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model: bike.name, messages: next.slice(1) }),
       });
-      if (!response.ok) throw new Error(await readError(response, "No pude conectar con Anthropic."));
+      if (!response.ok) throw new Error(await readError(response, "No pude conectar con Gemini."));
       const data: { reply: string; edit: Edit | null } = await response.json();
       setMsgs([...next, { role: "assistant", content: data.reply }]); setPending(data.edit);
     } catch (err) { setError(err instanceof Error ? err.message : "No pude conectar con la IA. Revisa el servidor y las claves."); }
@@ -227,14 +227,14 @@ export default function App() {
             </section>
 
             <section className="trust-strip" aria-label="Ventajas">
-              <div><ShieldCheck /><span><b>Uso transparente de tu foto</b><small>fal.ai la procesa al editar</small></span></div>
+              <div><ShieldCheck /><span><b>Uso transparente de tu foto</b><small>solo se envía al proveedor al editar</small></span></div>
               <div><Gauge /><span><b>Empieza en segundos</b><small>Sin formularios obligatorios</small></span></div>
               <div><Sparkles /><span><b>Conectores de IA reales</b><small>Sin respuestas pregrabadas</small></span></div>
               <div className="trust-last"><Moon /><span><b>Sin registro obligatorio</b><small>Entra directo al taller</small></span></div>
             </section>
 
             {catalogError && <div className="inline-warning"><CircleHelp size={16} />{catalogError}</div>}
-            {serviceStatus && (!serviceStatus.chat_ready || !serviceStatus.image_ready) && <div className="inline-warning"><CircleHelp size={16} /><span>Para activar el chat y las ediciones reales, configura <b>ANTHROPIC_API_KEY</b> y <b>FAL_KEY</b> en el backend.</span></div>}
+            {serviceStatus && !serviceStatus.chat_ready && <div className="inline-warning"><CircleHelp size={16} /><span>Para activar el chat real, configura <b>GEMINI_API_KEY</b> en el backend. La edición de fotos necesita un proveedor de imágenes adicional.</span></div>}
 
             <section className="models-section section-pad" id="motos">
               <div className="section-heading">
@@ -269,7 +269,7 @@ export default function App() {
                 <div className="eyebrow dark"><span className="eyebrow-line" /> FÁCIL, VISUAL, TUYO</div><h2>De la idea a la imagen.<br /><em>Así de sencillo.</em></h2>
                 <div className="steps">
                   <div className="step"><span className="step-number">01</span><div><h3>Elige o sube</h3><p>Empieza con una moto de referencia o una foto lateral de la tuya.</p></div></div>
-                  <div className="step"><span className="step-number">02</span><div><h3>Cuéntale a Claude</h3><p>Describe tu idea con tus palabras. La IA concreta la pieza y el estilo.</p></div></div>
+                  <div className="step"><span className="step-number">02</span><div><h3>Cuéntale a Gemini</h3><p>Describe tu idea con tus palabras. La IA concreta la pieza y el estilo.</p></div></div>
                   <div className="step"><span className="step-number">03</span><div><h3>Señala y transforma</h3><p>Revisa la máscara detectada por SAM 2 y aplica el cambio con Flux Fill.</p></div></div>
                 </div>
                 <button className="text-link" onClick={goToModels}>Empezar a explorar <ArrowRight size={16} /></button>
@@ -288,8 +288,8 @@ export default function App() {
               <div className="faq-intro"><div className="eyebrow dark"><span className="eyebrow-line" /> ANTES DE ARRANCAR</div><h2>Preguntas rápidas.</h2><p>Lo esencial para entrar al taller con confianza.</p></div>
               <div className="faq-list">
                 <details><summary>¿Necesito crear una cuenta para probar? <ChevronDown size={18} /></summary><p>No. Puedes elegir un modelo y comenzar en el momento. La cuenta es opcional y sirve para identificar tu sesión en este dispositivo.</p></details>
-                <details><summary>¿Las modificaciones son imágenes reales? <ChevronDown size={18} /></summary><p>Sí. Cuando las claves del servidor están configuradas, el chat consulta Claude y las imágenes se editan con SAM 2 y Flux Fill. Si un servicio no está disponible, verás un error; nunca se reemplaza por una respuesta simulada.</p></details>
-                <details><summary>¿Puedo usar la foto de mi moto? <ChevronDown size={18} /></summary><p>Sí. Entra con cualquier moto de muestra y usa “Subir mi foto” en el taller. Una vista lateral bien iluminada ayuda a detectar mejor las piezas. Al editar, la imagen se envía a fal.ai para segmentación e inpainting; MotoMod no la publica ni la guarda en la cuenta.</p></details>
+                <details><summary>¿Las modificaciones son imágenes reales? <ChevronDown size={18} /></summary><p>El chat consulta Gemini. La edición de imágenes requiere habilitar un proveedor adicional como fal.ai; sin él, el taller lo informa y no muestra resultados simulados.</p></details>
+                <details><summary>¿Puedo usar la foto de mi moto? <ChevronDown size={18} /></summary><p>Sí. Entra con cualquier moto de muestra y usa “Subir mi foto” en el taller. Una vista lateral bien iluminada ayuda a detectar mejor las piezas. La foto solo se envía al proveedor de imágenes cuando este está configurado para editar; MotoMod no la publica ni la guarda en la cuenta.</p></details>
               </div>
             </section>
           </main>
@@ -323,17 +323,17 @@ export default function App() {
               </div>
             </section>
             <aside className="chat-panel">
-              <div className="chat-heading"><div className="chat-avatar"><Sparkles size={17} /></div><div><b>Copiloto de diseño</b><span className={serviceStatus?.chat_ready ? "provider-ready" : "provider-offline"}><i />{serviceStatus?.chat_ready ? "Claude · API real activa" : "Claude · falta configurar API"}</span></div><button onClick={() => setMsgs([{ role: "assistant", content: GREETING }])} title="Nueva conversación"><MoreHorizontal size={19} /></button></div>
+              <div className="chat-heading"><div className="chat-avatar"><Sparkles size={17} /></div><div><b>Copiloto de diseño</b><span className={serviceStatus?.chat_ready ? "provider-ready" : "provider-offline"}><i />{serviceStatus?.chat_ready ? "Gemini · API real activa" : "Gemini · falta configurar API"}</span></div><button onClick={() => setMsgs([{ role: "assistant", content: GREETING }])} title="Nueva conversación"><MoreHorizontal size={19} /></button></div>
               <div className="chat-context"><MessageCircle size={14} /><span>Diseñando para <b>{bike?.name}</b></span></div>
-              {serviceStatus && (!serviceStatus.chat_ready || !serviceStatus.image_ready) && <div className="service-warning"><CircleHelp size={14} /><span>{!serviceStatus.chat_ready && !serviceStatus.image_ready ? "Configura ANTHROPIC_API_KEY y FAL_KEY en backend/.env para activar IA real." : !serviceStatus.chat_ready ? "Falta ANTHROPIC_API_KEY para el chat real." : "Falta FAL_KEY para segmentar y editar imágenes."}</span></div>}
+              {serviceStatus && (!serviceStatus.chat_ready || !serviceStatus.image_ready) && <div className="service-warning"><CircleHelp size={14} /><span>{!serviceStatus.chat_ready && !serviceStatus.image_ready ? "Falta GEMINI_API_KEY para el chat. La edición de imágenes requiere un proveedor adicional de pago." : !serviceStatus.chat_ready ? "Falta GEMINI_API_KEY para activar el chat real." : "El chat está activo. La edición de imágenes requiere un proveedor adicional de pago."}</span></div>}
               <div className="chat-messages" aria-live="polite">
-                {msgs.map((message, i) => <div key={i} className={`chat-bubble ${message.role}`}><p>{message.content}</p>{message.role === "assistant" && i > 0 && <small><Sparkles size={11} /> Claude</small>}</div>)}
+                {msgs.map((message, i) => <div key={i} className={`chat-bubble ${message.role}`}><p>{message.content}</p>{message.role === "assistant" && i > 0 && <small><Sparkles size={11} /> Gemini</small>}</div>)}
                 {busy && !dot && <div className="chat-bubble assistant"><div className="typing-dots"><i /><i /><i /></div><small>{busy}</small></div>}
                 <div ref={chatEnd} />
               </div>
               {error && <div className="chat-error" role="alert"><CircleHelp size={16} /><span>{error}</span></div>}
               {msgs.length <= 1 && <div className="prompt-suggestions"><span>IDEAS PARA EMPEZAR</span>{IDEAS.map(idea => <button key={idea} onClick={() => void send(idea)} disabled={!!busy}>{idea}<ArrowUpRightIcon /></button>)}</div>}
-              {pending && !busy && !mask && <div className="part-prompt"><Sparkles size={15} /><span>Claude sugiere modificar <b>{pending.part}</b>. Ahora toca esa pieza en la foto.</span></div>}
+              {pending && !busy && !mask && <div className="part-prompt"><Sparkles size={15} /><span>Gemini sugiere modificar <b>{pending.part}</b>. Ahora toca esa pieza en la foto.</span></div>}
               {pending && !busy && <button className="cancel-edit" onClick={() => { setPending(null); setMask(null); setDot(null); }}>Cancelar selección</button>}
               <div className="chat-compose"><textarea value={text} rows={2} disabled={!!busy} placeholder="Describe tu idea…" aria-label="Describe la modificación" onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(text); } }} /><button className="send-button" onClick={() => void send(text)} disabled={!!busy || !text.trim()} aria-label="Enviar mensaje"><ArrowRight size={18} /></button><small>Enter para enviar · Shift + Enter para una nueva línea</small></div>
             </aside>

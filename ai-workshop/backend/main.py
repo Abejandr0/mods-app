@@ -3,7 +3,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from contextlib import contextmanager
 import fal_client, httpx
-from anthropic import Anthropic, APIConnectionError, APITimeoutError, APIStatusError
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response as FastAPIResponse, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,7 +12,7 @@ from pydantic import BaseModel
 
 load_dotenv()
 app = FastAPI()
-ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5-5")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 DATA_DIR = Path(os.getenv("WORKSHOP_DATA_DIR", Path(__file__).parent / "data"))
 DB_PATH = DATA_DIR / "workshop.sqlite3"
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
@@ -225,7 +224,7 @@ def catalog():
 @app.get("/api/status")
 def service_status():
     return {
-        "chat_ready": bool(os.getenv("ANTHROPIC_API_KEY")),
+        "chat_ready": bool(os.getenv("GEMINI_API_KEY")),
         "image_ready": bool(os.getenv("FAL_KEY")),
         "ai_is_simulated": False,
     }
@@ -244,37 +243,54 @@ def healthz():
 @app.post("/api/chat")
 def chat(body: Chat):
     try:
-        if not os.getenv("ANTHROPIC_API_KEY"):
-            raise HTTPException(503, "Configura ANTHROPIC_API_KEY en backend/.env para activar el chat.")
-        # La API de Messages no acepta dos mensajes consecutivos del mismo rol.
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            raise HTTPException(503, "Configura GEMINI_API_KEY en el backend para activar el chat con Gemini.")
+        # Gemini usa "model" para respuestas de IA y no acepta turnos seguidos del mismo rol.
         normalized = []
         for message in body.messages:
             role = message.get("role")
             content = message.get("content")
             if role not in ("user", "assistant") or not isinstance(content, str):
                 continue
-            if normalized and normalized[-1]["role"] == role:
+            api_role = "model" if role == "assistant" else "user"
+            if normalized and normalized[-1]["role"] == api_role:
                 normalized[-1]["content"] += "\n" + content
             else:
-                normalized.append({"role": role, "content": content})
-        r = Anthropic(timeout=90).messages.create(
-            model=ANTHROPIC_MODEL,
-            max_tokens=500,
-            system=SYSTEM.replace("{model}", body.model),
-            messages=normalized,
+                normalized.append({"role": api_role, "content": content})
+        while normalized and normalized[0]["role"] == "model":
+            normalized.pop(0)
+        if not normalized:
+            raise HTTPException(422, "Escribe una idea antes de consultar al copiloto.")
+        response = httpx.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent",
+            headers={"x-goog-api-key": api_key},
+            json={
+                "systemInstruction": {"parts": [{"text": SYSTEM.replace("{model}", body.model)}]},
+                "contents": [
+                    {"role": item["role"], "parts": [{"text": item["content"]}]}
+                    for item in normalized
+                ],
+                "generationConfig": {"maxOutputTokens": 500},
+            },
+            timeout=httpx.Timeout(90, connect=15),
         )
-        txt = r.content[0].text
+        response.raise_for_status()
+        parts = response.json()["candidates"][0]["content"]["parts"]
+        txt = "".join(part.get("text", "") for part in parts)
         m = re.search(r"\{.*\}", txt, re.S)
         if not m:
             return {"reply": txt, "edit": None}
         return json.loads(m.group(0))
     except HTTPException:
         raise
-    except (APIConnectionError, APITimeoutError) as exc:
-        raise HTTPException(502, "No pude conectar con Anthropic. Revisa tu conexión e inténtalo otra vez.") from exc
-    except APIStatusError as exc:
-        raise HTTPException(502, f"Anthropic respondió con un error ({exc.status_code}). Revisa la clave y el modelo configurado.") from exc
-    except (ValueError, IndexError, json.JSONDecodeError) as exc:
+    except httpx.TimeoutException as exc:
+        raise HTTPException(504, "Gemini tardó demasiado en responder. Espera un momento e inténtalo otra vez.") from exc
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(502, f"Gemini respondió con un error ({exc.response.status_code}). Revisa la clave o la cuota gratuita en AI Studio.") from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(502, "No pude conectar con Gemini. Revisa la conexión e inténtalo otra vez.") from exc
+    except (ValueError, IndexError, KeyError, json.JSONDecodeError) as exc:
         raise HTTPException(502, "La respuesta de la IA no llegó en el formato esperado. Inténtalo de nuevo.") from exc
 
 
@@ -298,7 +314,7 @@ def prepare_image(image: Image.Image) -> Image.Image:
 
 def segment(image: Image.Image, x: float, y: float) -> Image.Image:
     if not os.getenv("FAL_KEY"):
-        raise HTTPException(503, "Configura FAL_KEY en backend/.env para activar las modificaciones.")
+        raise HTTPException(503, "La edición de imagen necesita un proveedor de segmentación e inpainting. No hay un motor de imágenes gratuito habilitado.")
     w, h = image.size
     if not 0 <= x <= 1 or not 0 <= y <= 1:
         raise HTTPException(422, "El punto seleccionado quedó fuera de la foto. Vuelve a tocar la pieza.")
@@ -335,6 +351,8 @@ def edit(
     model: str = Form(""),
 ):
     try:
+        if not os.getenv("FAL_KEY"):
+            raise HTTPException(503, "La edición de imagen requiere un proveedor adicional de pago; esta versión gratuita no simula el resultado.")
         img = prepare_image(Image.open(image.file))
         w, h = img.size
         if mask_file:
