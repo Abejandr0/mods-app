@@ -114,7 +114,7 @@ def init_auth_db():
                 created_at TEXT NOT NULL
             )
         """)
-        db_execute(db, """
+        db_execute(db, f"""
             CREATE TABLE IF NOT EXISTS sessions (
                 token_hash TEXT PRIMARY KEY,
                 user_id {session_user_id_type} NOT NULL REFERENCES users(id) ON DELETE CASCADE,
