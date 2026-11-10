@@ -1,0 +1,11 @@
+# Reemplaza este nombre por el dominio que apunta a la IP estática de Lightsail.
+tudominio.com {
+	encode zstd gzip
+
+	@api path /api/* /healthz
+	reverse_proxy @api 127.0.0.1:8000
+
+	root * /var/www/motomod
+	try_files {path} /index.html
+	file_server
+}
