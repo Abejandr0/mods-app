@@ -1,6 +1,6 @@
 # Taller virtual de motos
 
-Aplicación web React + TypeScript con un backend FastAPI. La homepage permite entrar al taller al instante con una moto de muestra por categoría o subir una foto propia. El chat usa Gemini API; el editor de imágenes usa SAM 2 y Flux Fill cuando se configura una clave de fal.ai. No hay simulación: si un proveedor no está habilitado, la app explica qué función falta.
+Aplicación web React + TypeScript con un backend FastAPI. La homepage permite entrar al taller al instante con una moto de muestra por categoría o subir una foto propia. El chat usa Gemini API; las modificaciones reales usan Amazon Titan Image Generator G1 v2 a través de Amazon Bedrock. No hay simulación: si falta una clave o permiso, la app explica qué función falta.
 
 Las fotos de muestra son visuales generados para probar la interfaz; representan una categoría y no son imágenes exactas de los modelos anunciados.
 
@@ -21,7 +21,7 @@ cd ai-workshop/backend
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
 pip install -r requirements.txt
-cp .env.example .env       # agrega las claves al archivo .env
+cp .env.example .env       # agrega GEMINI_API_KEY; para Bedrock local configura AWS SSO/credenciales
 uvicorn main:app --reload --port 8000
 ```
 
@@ -41,13 +41,13 @@ En la barra superior puedes crear una cuenta o iniciar sesión. El acceso no blo
 
 ## Probar la edición sin la interfaz
 
-Desde `ai-workshop/backend` con el entorno virtual activo y `FAL_KEY` configurada (opcional y con cobro por uso):
+Desde `ai-workshop/backend` con el entorno virtual activo y credenciales AWS de desarrollo configuradas (por ejemplo, AWS SSO). La llamada real a Bedrock tiene cobro por uso:
 
 ```bash
-python test_edit.py foto-moto.jpg 0.63 0.48 "matte black five-spoke alloy wheel" --model "Yamaha R15" --output resultado.png
+python test_edit.py foto-moto.jpg 0.63 0.48 "matte black five-spoke alloy wheel" --part rueda --model "Yamaha R15" --output resultado.png --region us-east-1
 ```
 
-Las coordenadas `x` e `y` son proporciones de la foto entre 0 y 1. El script también guarda la máscara en `mascara.png`.
+Las coordenadas `x` e `y` son proporciones entre 0 y 1. La prueba guarda el resultado y la máscara inferida si Bedrock la devuelve. Cada ejecución invoca una vez el modelo facturable.
 
 En desarrollo el frontend usa el proxy de Vite para `/api`; en producción `VITE_API_URL` apunta al backend. Las claves permanecen en el servidor.
 
@@ -60,7 +60,7 @@ Render pedirá `GEMINI_API_KEY` y `DATABASE_URL`; introdúcelas en el panel de R
 ### IA y límites del nivel gratuito
 
 - Gemini: crea una clave en [Google AI Studio → API keys](https://aistudio.google.com/api-keys). El chat usa `gemini-3.1-flash-lite`, con cuota gratuita sujeta a límites por proyecto.
-- La edición de fotos con IA permanece desactivada si no configuras `FAL_KEY`. Los modelos de generación de imágenes de Gemini API actualmente no incluyen cuota gratuita; Gemini Plus tampoco incluye API. No se sustituye el resultado por una imagen falsa.
+- La edición de fotos usa Titan Image Generator en Amazon Bedrock y se cobra por uso; no forma parte de Gemini Plus. En AWS, el backend usa un rol IAM adjunto a EC2 para evitar guardar claves AWS permanentes.
 
 ### Persistencia y disponibilidad
 
@@ -68,6 +68,6 @@ La cuenta guarda usuarios y sesiones en Neon PostgreSQL. Fotos y resultados de e
 
 Para despliegue manual, configura el backend con `pip install -r requirements.txt` y `uvicorn main:app --host 0.0.0.0 --port $PORT`; configura el frontend con `npm ci && npm run build` y publica `dist`.
 
-## AWS Lightsail
+## AWS EC2 con Bedrock
 
-Para alojarlo en AWS con un solo servidor y bajo costo, sigue la [guía de Lightsail](deploy/aws-lightsail.md) y usa las plantillas de [Caddy](deploy/Caddyfile) y [systemd](deploy/motomod-api.service).
+Para alojarlo en AWS con un solo servidor y bajo costo, sigue la [guía de EC2 con Bedrock](deploy/aws-ec2-bedrock.md) y usa las plantillas de [Caddy](deploy/Caddyfile) y [systemd](deploy/motomod-api.service). La instancia guarda las cuentas en SQLite persistente; revisa la guía para costos, créditos, IAM, HTTPS, copias de seguridad y prueba de Bedrock.

@@ -1,18 +1,25 @@
 import hashlib, io, json, os, re, secrets, sqlite3
+import base64
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from contextlib import contextmanager
-import fal_client, httpx
+import httpx
+import boto3
+from botocore.config import Config
+from botocore.exceptions import BotoCoreError, ClientError
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response as FastAPIResponse, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
-from PIL import Image, ImageFilter
+from PIL import Image
 from pydantic import BaseModel
 
 load_dotenv()
 app = FastAPI()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "amazon.titan-image-generator-v2:0")
+BEDROCK_ENABLED = os.getenv("BEDROCK_ENABLED", "true").lower() in ("1", "true", "yes")
 DATA_DIR = Path(os.getenv("WORKSHOP_DATA_DIR", Path(__file__).parent / "data"))
 DB_PATH = DATA_DIR / "workshop.sqlite3"
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
@@ -225,7 +232,7 @@ def catalog():
 def service_status():
     return {
         "chat_ready": bool(os.getenv("GEMINI_API_KEY")),
-        "image_ready": bool(os.getenv("FAL_KEY")),
+        "image_ready": BEDROCK_ENABLED,
         "ai_is_simulated": False,
     }
 
@@ -294,112 +301,102 @@ def chat(body: Chat):
         raise HTTPException(502, "La respuesta de la IA no llegó en el formato esperado. Inténtalo de nuevo.") from exc
 
 
-def upload(im: Image.Image) -> str:
-    buf = io.BytesIO()
-    im.save(buf, "PNG")
-    return fal_client.upload(buf.getvalue(), "image/png")
-
-
-def download(url: str) -> bytes:
-    response = httpx.get(url, timeout=httpx.Timeout(90, connect=15), follow_redirects=True)
-    response.raise_for_status()
-    return response.content
-
-
 def prepare_image(image: Image.Image) -> Image.Image:
     image = image.convert("RGB")
     image.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
     return image
 
 
-def segment(image: Image.Image, x: float, y: float) -> Image.Image:
-    if not os.getenv("FAL_KEY"):
-        raise HTTPException(503, "La edición de imagen necesita un proveedor de segmentación e inpainting. No hay un motor de imágenes gratuito habilitado.")
-    w, h = image.size
-    if not 0 <= x <= 1 or not 0 <= y <= 1:
-        raise HTTPException(422, "El punto seleccionado quedó fuera de la foto. Vuelve a tocar la pieza.")
-    try:
-        result = fal_client.subscribe(
-            "fal-ai/sam2/image",
-            arguments={"image_url": upload(image), "prompts": [{"x": round(x * (w - 1)), "y": round(y * (h - 1)), "label": 1}], "output_format": "png"},
-            client_timeout=180,
-        )
-        item = result.get("image")
-        if not item or not item.get("url"):
-            raise ValueError("SAM 2 no devolvió una imagen de máscara")
-        mask = Image.open(io.BytesIO(download(item["url"]))).convert("L").resize((w, h))
-        mask = mask.point(lambda value: 255 if value > 127 else 0)
-        white = mask.histogram()[255]
-        if white == 0 or white > w * h * 0.6:
-            raise HTTPException(422, "No pude aislar esa pieza. Toca más cerca de su centro y con la moto bien visible.")
-        return mask
-    except HTTPException:
-        raise
-    except (httpx.HTTPError, OSError, ValueError, KeyError) as exc:
-        raise HTTPException(502, "No pude detectar la pieza. Revisa tu conexión e inténtalo otra vez.") from exc
-    except Exception as exc:
-        raise HTTPException(502, "El servicio de segmentación falló o tardó demasiado. Inténtalo de nuevo.") from exc
+def image_bytes(image: Image.Image, fmt: str = "PNG") -> bytes:
+    output = io.BytesIO()
+    image.save(output, format=fmt, quality=90, optimize=True)
+    return output.getvalue()
+
+
+def bedrock_runtime():
+    return boto3.client(
+        "bedrock-runtime",
+        region_name=AWS_REGION,
+        config=Config(connect_timeout=10, read_timeout=180, retries={"total_max_attempts": 1, "mode": "standard"}),
+    )
+
+
+def mask_label(part: str) -> str:
+    labels = {
+        "rin": "motorcycle wheel rims", "rueda": "motorcycle wheel", "rines": "motorcycle wheel rims",
+        "escape": "motorcycle exhaust pipe", "tanque": "motorcycle fuel tank",
+        "manillar": "motorcycle handlebars", "farola": "motorcycle headlight",
+        "faro": "motorcycle headlight", "asiento": "motorcycle seat",
+        "carenado": "motorcycle side fairing", "color": "motorcycle body panels",
+        "espejo": "motorcycle mirror", "guardabarros": "motorcycle fender",
+    }
+    normalized = part.strip().lower()
+    return labels.get(normalized, f"{normalized} on the motorcycle")
 
 
 @app.post("/api/edit")
 def edit(
     image: UploadFile = File(...),
-    mask_file: UploadFile | None = File(None),
     x: float = Form(...),
     y: float = Form(...),
     prompt: str = Form(...),
-    model: str = Form(""),
+    part: str = Form("pieza"),
+    model: str = Form("moto"),
 ):
     try:
-        if not os.getenv("FAL_KEY"):
-            raise HTTPException(503, "La edición de imagen requiere un proveedor adicional de pago; esta versión gratuita no simula el resultado.")
+        if not BEDROCK_ENABLED:
+            raise HTTPException(503, "Amazon Bedrock está desactivado en la configuración del servidor.")
+        if not 0 <= x <= 1 or not 0 <= y <= 1:
+            raise HTTPException(422, "El punto seleccionado quedó fuera de la foto. Vuelve a tocar la pieza.")
+        if not prompt.strip() or len(prompt) > 512:
+            raise HTTPException(422, "La descripción del cambio debe tener entre 1 y 512 caracteres.")
         img = prepare_image(Image.open(image.file))
-        w, h = img.size
-        if mask_file:
-            mask = Image.open(mask_file.file).convert("L").resize((w, h))
-            mask = mask.point(lambda value: 255 if value > 127 else 0)
-        else:
-            mask = segment(img, x, y)
-        mask = mask.filter(ImageFilter.MaxFilter(15))
-        url = upload(img)
-        res = fal_client.subscribe(
-            "fal-ai/flux-pro/v1/fill",
-            arguments={
-                "image_url": url,
-                "mask_url": upload(mask),
-                "prompt": f"Photorealistic product photo of the same {model} motorcycle. Change only the selected part: {prompt}. Preserve the original camera angle, lighting, shadows, background, and all unselected parts. The replacement must fit naturally and be mechanically plausible.",
-                "output_format": "png",
-                "num_images": 1,
-                "enhance_prompt": True,
-            },
-            client_timeout=240,
+        width, height = img.size
+        target = mask_label(part)
+        params = {
+            "image": base64.b64encode(image_bytes(img, "JPEG")).decode("ascii"),
+            "text": (
+                f"Photorealistic edit of the same {model} motorcycle. Change only its {target}: {prompt}. "
+                "Preserve the original camera angle, lighting, shadows, background, motorcycle geometry, "
+                "and every other part. Make the replacement physically plausible and naturally integrated."
+            )[:512],
+            "maskPrompt": (
+                f"The {target} near coordinates approximately {round(x * 100)}% from the left "
+                f"and {round(y * 100)}% from the top of the image. Mask only that motorcycle part."
+            )[:512],
+        }
+        body = json.dumps({
+            "taskType": "INPAINTING",
+            "inPaintingParams": params,
+            "imageGenerationConfig": {"numberOfImages": 1, "quality": "standard", "cfgScale": 8.0},
+        })
+        result = bedrock_runtime().invoke_model(
+            modelId=BEDROCK_MODEL_ID, body=body, accept="application/json", contentType="application/json"
         )
-        images = res.get("images", [])
-        if not images or not images[0].get("url"):
-            raise ValueError("Flux Fill no devolvió una imagen")
-        edited = prepare_image(Image.open(io.BytesIO(download(images[0]["url"]))))
-        if edited.size != (w, h):
-            edited = edited.resize((w, h), Image.Resampling.LANCZOS)
+        model_result = json.loads(result["body"].read())
+        if model_result.get("error") or not model_result.get("images"):
+            raise ValueError(model_result.get("error") or "Titan Image Generator no devolvió una imagen")
+        generated = base64.b64decode(model_result["images"][0], validate=True)
+        edited = Image.open(io.BytesIO(generated)).convert("RGB")
+        if edited.size != (width, height):
+            edited = edited.resize((width, height), Image.Resampling.LANCZOS)
         output = io.BytesIO()
         edited.save(output, "PNG")
         return Response(output.getvalue(), media_type="image/png")
     except HTTPException:
         raise
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
         raise HTTPException(422, "No pude procesar la foto. Sube un JPG o PNG válido e inténtalo de nuevo.") from exc
+    except ClientError as exc:
+        code = exc.response.get("Error", {}).get("Code", "BedrockError")
+        if code in ("AccessDeniedException", "UnrecognizedClientException"):
+            raise HTTPException(503, "Bedrock no autorizó la solicitud. Revisa el rol IAM y el permiso bedrock:InvokeModel.") from exc
+        if code in ("ThrottlingException", "ServiceQuotaExceededException"):
+            raise HTTPException(429, "Bedrock alcanzó el límite de solicitudes. Espera un momento e inténtalo de nuevo.") from exc
+        if code in ("ValidationException", "ResourceNotFoundException"):
+            raise HTTPException(502, f"Bedrock rechazó el formato o modelo ({code}). Revisa la región y el modelo configurados.") from exc
+        raise HTTPException(502, f"Bedrock no pudo editar la imagen ({code}). Revisa el modelo y la región configurados.") from exc
+    except BotoCoreError as exc:
+        raise HTTPException(502, "No pude conectar con Bedrock. Revisa la región y la conexión del servidor.") from exc
     except Exception as exc:
-        raise HTTPException(502, "No pude aplicar el cambio. El servicio tardó o respondió con un error; inténtalo de nuevo.") from exc
-
-
-@app.post("/api/segment")
-def preview_segment(image: UploadFile = File(...), x: float = Form(...), y: float = Form(...)):
-    try:
-        img = prepare_image(Image.open(image.file))
-        mask = segment(img, x, y)
-        output = io.BytesIO()
-        mask.save(output, "PNG")
-        return Response(output.getvalue(), media_type="image/png")
-    except HTTPException:
-        raise
-    except OSError as exc:
-        raise HTTPException(422, "No pude leer la foto. Sube un JPG o PNG válido.") from exc
+        raise HTTPException(502, "No pude aplicar el cambio. Bedrock tardó o respondió con un error; inténtalo de nuevo.") from exc

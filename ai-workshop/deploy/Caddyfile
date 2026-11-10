@@ -1,5 +1,5 @@
-# Reemplaza este nombre por el dominio que apunta a la IP estática de Lightsail.
-tudominio.com {
+# Reemplaza por el dominio DNS que apunta a la Elastic IP de EC2.
+taller.tudominio.com {
 	encode zstd gzip
 
 	@api path /api/* /healthz
