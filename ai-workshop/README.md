@@ -59,7 +59,7 @@ Render pedirá `GEMINI_API_KEY` y `DATABASE_URL`; introdúcelas en el panel de R
 
 ### IA y límites del nivel gratuito
 
-- Gemini: crea una clave en [Google AI Studio → API keys](https://aistudio.google.com/api-keys). El chat usa `gemini-3.1-flash-lite`, con cuota gratuita sujeta a límites por proyecto.
+- Gemini: crea una clave en [Google AI Studio → API keys](https://aistudio.google.com/api-keys). El chat usa `gemini-3.5-flash-lite`, con cuota gratuita sujeta a límites por proyecto.
 - La edición de fotos usa Titan Image Generator en Amazon Bedrock y se cobra por uso; no forma parte de Gemini Plus. En AWS, el backend usa un rol IAM adjunto a EC2 para evitar guardar claves AWS permanentes.
 
 ### Persistencia y disponibilidad

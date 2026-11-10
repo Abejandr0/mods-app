@@ -127,7 +127,7 @@ Contenido (reemplaza dominio y clave):
 
 ```env
 GEMINI_API_KEY=tu_clave_de_google_ai_studio
-GEMINI_MODEL=gemini-3.1-flash-lite
+GEMINI_MODEL=gemini-3.5-flash-lite
 AWS_REGION=us-east-1
 BEDROCK_MODEL_ID=amazon.titan-image-generator-v2:0
 BEDROCK_ENABLED=true
@@ -194,4 +194,5 @@ Para dejar de incurrir en cómputo, termina la instancia y revisa/elimina por se
 - [Roles IAM para aplicaciones en EC2](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/iam-roles-for-amazon-ec2.html)
 - [Precios de EC2 T3/T3a](https://aws.amazon.com/ec2/instance-types/t3/), [IPv4 pública](https://aws.amazon.com/vpc/pricing/) y [EBS gp3](https://aws.amazon.com/ebs/general-purpose/)
 - [Precios de Amazon Bedrock](https://aws.amazon.com/bedrock/pricing/)
+- [Modelo Gemini 3.5 Flash-Lite y precios/cuota gratuita](https://ai.google.dev/gemini-api/docs/pricing#gemini-3.5-flash-lite)
 - [Ver créditos y productos elegibles](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/useconsolidatedbilling-credits.html)

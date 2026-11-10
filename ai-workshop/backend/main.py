@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 load_dotenv()
 app = FastAPI()
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "amazon.titan-image-generator-v2:0")
 BEDROCK_ENABLED = os.getenv("BEDROCK_ENABLED", "true").lower() in ("1", "true", "yes")
