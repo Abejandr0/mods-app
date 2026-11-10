@@ -6,3 +6,4 @@ httpx
 fal-client
 anthropic
 python-dotenv
+psycopg[binary]

@@ -1,10 +1,12 @@
 import hashlib, io, json, os, re, secrets, sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from contextlib import contextmanager
 import fal_client, httpx
 from anthropic import Anthropic, APIConnectionError, APITimeoutError, APIStatusError
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response as FastAPIResponse, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from PIL import Image, ImageFilter
 from pydantic import BaseModel
@@ -14,8 +16,24 @@ app = FastAPI()
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5-5")
 DATA_DIR = Path(os.getenv("WORKSHOP_DATA_DIR", Path(__file__).parent / "data"))
 DB_PATH = DATA_DIR / "workshop.sqlite3"
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+USE_POSTGRES = DATABASE_URL.startswith(("postgres://", "postgresql://"))
 SESSION_COOKIE = "motomod_session"
 SESSION_DAYS = 14
+
+allowed_origins = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv("FRONTEND_URL", "").split(",")
+    if origin.strip()
+]
+allowed_origins.extend(["http://localhost:5173", "http://127.0.0.1:5173"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type"],
+)
 
 CATALOG = [
     {"id": "gixxer-sf-250", "name": "Suzuki Gixxer SF 250", "type": "Deportiva"},
@@ -51,30 +69,57 @@ class LoginInput(BaseModel):
     password: str
 
 
+@contextmanager
 def db_connect():
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(DB_PATH)
-    db.row_factory = sqlite3.Row
-    db.execute("PRAGMA foreign_keys = ON")
-    return db
+    if USE_POSTGRES:
+        try:
+            import psycopg
+            from psycopg.rows import dict_row
+        except ImportError as exc:
+            raise RuntimeError("Instala psycopg para conectar DATABASE_URL.") from exc
+        db = psycopg.connect(DATABASE_URL.replace("postgres://", "postgresql://", 1), row_factory=dict_row)
+    else:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        db = sqlite3.connect(DB_PATH)
+        db.row_factory = sqlite3.Row
+        db.execute("PRAGMA foreign_keys = ON")
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+def db_execute(db, query: str, params=()):
+    if USE_POSTGRES:
+        query = query.replace("?", "%s")
+    return db.execute(query, params)
 
 
 def init_auth_db():
     with db_connect() as db:
-        db.executescript("""
+        user_id_type = "BIGSERIAL PRIMARY KEY" if USE_POSTGRES else "INTEGER PRIMARY KEY"
+        session_user_id_type = "BIGINT" if USE_POSTGRES else "INTEGER"
+        blob_type = "BYTEA" if USE_POSTGRES else "BLOB"
+        db_execute(db, f"""
             CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY,
+                id {user_id_type},
                 name TEXT NOT NULL,
                 email TEXT NOT NULL UNIQUE,
-                salt BLOB NOT NULL,
-                password_hash BLOB NOT NULL,
+                salt {blob_type} NOT NULL,
+                password_hash {blob_type} NOT NULL,
                 created_at TEXT NOT NULL
-            );
+            )
+        """)
+        db_execute(db, """
             CREATE TABLE IF NOT EXISTS sessions (
                 token_hash TEXT PRIMARY KEY,
-                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id {session_user_id_type} NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 expires_at TEXT NOT NULL
-            );
+            )
         """)
 
 
@@ -91,7 +136,7 @@ def session_user(request: Request):
         return None
     token_hash = hashlib.sha256(token.encode()).hexdigest()
     with db_connect() as db:
-        row = db.execute("""
+        row = db_execute(db, """
             SELECT users.id, users.name, users.email
             FROM sessions JOIN users ON users.id = sessions.user_id
             WHERE sessions.token_hash = ? AND sessions.expires_at > ?
@@ -103,13 +148,14 @@ def issue_session(user_id: int, response: FastAPIResponse):
     token = secrets.token_urlsafe(32)
     expires = datetime.now(timezone.utc) + timedelta(days=SESSION_DAYS)
     with db_connect() as db:
-        db.execute("DELETE FROM sessions WHERE expires_at <= ?", (datetime.now(timezone.utc).isoformat(),))
-        db.execute("INSERT INTO sessions(token_hash, user_id, expires_at) VALUES (?, ?, ?)",
+        db_execute(db, "DELETE FROM sessions WHERE expires_at <= ?", (datetime.now(timezone.utc).isoformat(),))
+        db_execute(db, "INSERT INTO sessions(token_hash, user_id, expires_at) VALUES (?, ?, ?)",
                    (hashlib.sha256(token.encode()).hexdigest(), user_id, expires.isoformat()))
     response.set_cookie(
         SESSION_COOKIE, token, max_age=SESSION_DAYS * 24 * 3600, httponly=True,
         secure=os.getenv("SECURE_COOKIES", "0").lower() in ("1", "true", "yes"),
-        samesite="lax", path="/",
+        samesite="none" if os.getenv("SECURE_COOKIES", "0").lower() in ("1", "true", "yes") else "lax",
+        path="/",
     )
 
 
@@ -129,12 +175,16 @@ def signup(body: AccountInput, response: FastAPIResponse):
     salt = secrets.token_bytes(16)
     try:
         with db_connect() as db:
-            cursor = db.execute(
-                "INSERT INTO users(name, email, salt, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+            cursor = db_execute(db,
+                "INSERT INTO users(name, email, salt, password_hash, created_at) VALUES (?, ?, ?, ?, ?) RETURNING id",
                 (name, email, salt, password_hash(password, salt), datetime.now(timezone.utc).isoformat()),
             )
-            user_id = cursor.lastrowid
+            user_id = cursor.fetchone()["id"]
     except sqlite3.IntegrityError as exc:
+        raise HTTPException(409, "Ya existe una cuenta con ese correo. Inicia sesión o usa otro correo.") from exc
+    except Exception as exc:
+        if exc.__class__.__name__ != "UniqueViolation":
+            raise
         raise HTTPException(409, "Ya existe una cuenta con ese correo. Inicia sesión o usa otro correo.") from exc
     issue_session(user_id, response)
     return {"user": {"id": user_id, "name": name, "email": email}}
@@ -144,7 +194,7 @@ def signup(body: AccountInput, response: FastAPIResponse):
 def login(body: LoginInput, response: FastAPIResponse):
     email = body.email.strip().lower()
     with db_connect() as db:
-        row = db.execute("SELECT id, name, email, salt, password_hash FROM users WHERE email = ?", (email,)).fetchone()
+        row = db_execute(db, "SELECT id, name, email, salt, password_hash FROM users WHERE email = ?", (email,)).fetchone()
     if not row or not secrets.compare_digest(password_hash(body.password, row["salt"]), row["password_hash"]):
         raise HTTPException(401, "Correo o contraseña incorrectos.")
     issue_session(row["id"], response)
@@ -162,7 +212,7 @@ def logout(request: Request, response: FastAPIResponse):
     token = request.cookies.get(SESSION_COOKIE)
     if token:
         with db_connect() as db:
-            db.execute("DELETE FROM sessions WHERE token_hash = ?", (hashlib.sha256(token.encode()).hexdigest(),))
+            db_execute(db, "DELETE FROM sessions WHERE token_hash = ?", (hashlib.sha256(token.encode()).hexdigest(),))
     response.delete_cookie(SESSION_COOKIE, path="/", httponly=True, samesite="lax")
     return {"ok": True}
 
@@ -179,6 +229,16 @@ def service_status():
         "image_ready": bool(os.getenv("FAL_KEY")),
         "ai_is_simulated": False,
     }
+
+
+@app.get("/healthz")
+def healthz():
+    try:
+        with db_connect() as db:
+            db_execute(db, "SELECT 1")
+        return {"status": "ok"}
+    except Exception as exc:
+        raise HTTPException(503, "La base de datos no está disponible.") from exc
 
 
 @app.post("/api/chat")

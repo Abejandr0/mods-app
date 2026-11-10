@@ -4,6 +4,7 @@ import {
   Download, Eye, EyeOff, Gauge, ImagePlus, LogIn, LogOut, Menu, MessageCircle,
   Moon, MoreHorizontal, RotateCcw, ShieldCheck, Sparkles, UserRound, X,
 } from "lucide-react";
+import { apiFetch } from "./api";
 
 type Bike = { id: string; name: string; type: string };
 type Msg = { role: "user" | "assistant"; content: string };
@@ -70,10 +71,10 @@ export default function App() {
   const current = versions[at];
 
   useEffect(() => {
-    fetch("/api/catalog").then(r => { if (!r.ok) throw new Error(); return r.json(); })
+    apiFetch("/api/catalog").then(r => { if (!r.ok) throw new Error(); return r.json(); })
       .then((data: Bike[]) => setBikes(data)).catch(() => setCatalogError("El backend no responde. Puedes recorrer la experiencia, pero el chat y la edición necesitan el servidor."));
-    fetch("/api/auth/me").then(r => r.json()).then(d => setUser(d.user)).catch(() => undefined);
-    fetch("/api/status").then(r => r.json()).then(setServiceStatus).catch(() => setServiceStatus({ chat_ready: false, image_ready: false, ai_is_simulated: false }));
+    apiFetch("/api/auth/me").then(r => r.json()).then(d => setUser(d.user)).catch(() => undefined);
+    apiFetch("/api/status").then(r => r.json()).then(setServiceStatus).catch(() => setServiceStatus({ chat_ready: false, image_ready: false, ai_is_simulated: false }));
   }, []);
   useEffect(() => { chatEnd.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy]);
   useEffect(() => {
@@ -121,7 +122,7 @@ export default function App() {
     const next = [...msgs, { role: "user" as const, content: content.trim() }];
     setMsgs(next); setText(""); setPending(null); setMask(null); setDot(null); setError(""); setBusy("Conectando con la IA…");
     try {
-      const response = await fetch("/api/chat", {
+      const response = await apiFetch("/api/chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model: bike.name, messages: next.slice(1) }),
       });
@@ -140,7 +141,7 @@ export default function App() {
     setDot({ x, y }); setBusy("Identificando la pieza con SAM 2…"); setError("");
     try {
       const form = new FormData(); form.append("image", current.blob); form.append("x", String(x)); form.append("y", String(y));
-      const response = await fetch("/api/segment", { method: "POST", body: form });
+      const response = await apiFetch("/api/segment", { method: "POST", body: form });
       if (!response.ok) throw new Error(await readError(response, "No pude identificar esa pieza."));
       const blob = await response.blob(); setMask({ url: URL.createObjectURL(blob), blob });
     } catch (err) { setError(err instanceof Error ? err.message : "Falló la detección de la pieza."); setDot(null); }
@@ -154,7 +155,7 @@ export default function App() {
       const form = new FormData(); form.append("image", current.blob); form.append("mask_file", mask.blob);
       form.append("x", String(dot?.x ?? 0.5)); form.append("y", String(dot?.y ?? 0.5));
       form.append("prompt", pending.prompt); form.append("model", bike.name);
-      const response = await fetch("/api/edit", { method: "POST", body: form });
+      const response = await apiFetch("/api/edit", { method: "POST", body: form });
       if (!response.ok) throw new Error(await readError(response, "No pude aplicar el cambio."));
       const blob = await response.blob();
       setVersions(v => [...v.slice(0, at + 1), { url: URL.createObjectURL(blob), blob, label: pending.part }]);
@@ -171,7 +172,7 @@ export default function App() {
       ? { name: String(form.get("name") || ""), email: String(form.get("email") || ""), password: String(form.get("password") || "") }
       : { email: String(form.get("email") || ""), password: String(form.get("password") || "") };
     try {
-      const response = await fetch(`/api/auth/${authMode}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const response = await apiFetch(`/api/auth/${authMode}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       if (!response.ok) throw new Error(await readError(response, "No pude completar la solicitud."));
       const data = await response.json(); setUser(data.user); setAuthOpen(false); setAccountView(false);
     } catch (err) { setAuthError(err instanceof Error ? err.message : "Revisa tu conexión e inténtalo de nuevo."); }
@@ -179,7 +180,7 @@ export default function App() {
   }
 
   async function signOut() {
-    await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+    await apiFetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
     setUser(null); setAccountView(false);
   }
 
