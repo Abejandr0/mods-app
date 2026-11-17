@@ -3,6 +3,5 @@ uvicorn[standard]
 python-multipart
 pillow
 httpx
-boto3
 python-dotenv
 psycopg[binary]

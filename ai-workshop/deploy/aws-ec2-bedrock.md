@@ -1,4 +1,6 @@
-# Despliegue low-cost en AWS EC2 + Amazon Bedrock
+# Guía anterior: AWS EC2 + Amazon Bedrock
+
+> Esta guía documenta la integración anterior de imágenes con Bedrock. El backend actual usa Stability AI y una máscara que pinta el usuario; no sigas los pasos de Bedrock ni crees el rol `MotoModEC2BedrockRole`. Para Lightsail revisa [aws-lightsail.md](aws-lightsail.md).
 
 Esta guía usa **una sola instancia EC2** para servir el frontend, ejecutar FastAPI y guardar cuentas en SQLite. Bedrock genera las ediciones; Gemini API conserva el chat. Así se evita pagar por RDS, balanceador, NAT Gateway y servicios separados. La instancia llama a Bedrock con un **rol IAM**, sin claves AWS permanentes en el servidor.
 

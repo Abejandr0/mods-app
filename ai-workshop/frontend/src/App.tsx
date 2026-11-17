@@ -14,6 +14,8 @@ type User = { id: number; name: string; email: string };
 type Screen = "home" | "studio";
 type AuthMode = "login" | "signup";
 type ServiceStatus = { chat_ready: boolean; image_ready: boolean; ai_is_simulated: false };
+type BrushPoint = { x: number; y: number };
+type BrushStroke = { points: BrushPoint[]; width: number };
 
 const CATALOG: Bike[] = [
   { id: "gixxer-sf-250", name: "Suzuki Gixxer SF 250", type: "Deportiva" },
@@ -49,7 +51,10 @@ export default function App() {
   const [pending, setPending] = useState<Edit | null>(null);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
-  const [dot, setDot] = useState<{ x: number; y: number } | null>(null);
+  const [strokes, setStrokes] = useState<BrushStroke[]>([]);
+  const [painting, setPainting] = useState(false);
+  const [brushSize, setBrushSize] = useState(42);
+  const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
   const [compare, setCompare] = useState(false);
   const [split, setSplit] = useState(50);
   const [filter, setFilter] = useState("Todas");
@@ -64,10 +69,13 @@ export default function App() {
   const [catalogError, setCatalogError] = useState("");
   const [serviceStatus, setServiceStatus] = useState<ServiceStatus | null>(null);
   const chatEnd = useRef<HTMLDivElement>(null);
+  const canvasImage = useRef<HTMLImageElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const accountModal = useRef<HTMLElement>(null);
   const filteredBikes = bikes.filter(b => filter === "Todas" || b.type === filter);
   const current = versions[at];
+
+  useEffect(() => { setStrokes([]); setPainting(false); setImageDimensions(null); }, [current?.url]);
 
   useEffect(() => {
     apiFetch("/api/catalog").then(r => { if (!r.ok) throw new Error(); return r.json(); })
@@ -103,7 +111,7 @@ export default function App() {
     const response = await fetch(`/samples/${sample.file}`);
     const blob = await response.blob();
     const version = { url: URL.createObjectURL(blob), blob, label: "Foto de muestra" };
-    setBike(selectedBike); setVersions([version]); setAt(0); setScreen("studio"); setDot(null);
+    setBike(selectedBike); setVersions([version]); setAt(0); setScreen("studio"); setStrokes([]);
     setMsgs([{ role: "assistant", content: `${GREETING} Representa el estilo ${sample.label}; no es una fotografía del modelo ${selectedBike.name}.` }]);
     setPending(null); setError(""); setCompare(false); window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -112,14 +120,14 @@ export default function App() {
     if (!file) return;
     if (!file.type.startsWith("image/")) { setError("Elige una imagen JPG, PNG o WebP."); return; }
     const version = { url: URL.createObjectURL(file), blob: file, label: "Mi foto" };
-    setVersions(v => [...v.slice(0, at + 1), version]); setAt(at + 1); setError(""); setPending(null); setDot(null);
+    setVersions(v => [...v.slice(0, at + 1), version]); setAt(at + 1); setError(""); setPending(null); setStrokes([]);
     setMsgs(m => [...m, { role: "assistant", content: "Foto lista. Cuéntame qué te gustaría cambiar." }]);
   }
 
   async function send(content: string) {
     if (!content.trim() || busy || !bike) return;
     const next = [...msgs, { role: "user" as const, content: content.trim() }];
-    setMsgs(next); setText(""); setPending(null); setDot(null); setError(""); setBusy("Conectando con la IA…");
+    setMsgs(next); setText(""); setPending(null); setStrokes([]); setError(""); setBusy("Conectando con la IA…");
     try {
       const response = await apiFetch("/api/chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -132,27 +140,85 @@ export default function App() {
     setBusy("");
   }
 
-  function selectPart(event: React.MouseEvent<HTMLImageElement>) {
-    if (!pending || busy || !bike || !current || dot) return;
+  function brushPoint(event: React.PointerEvent<SVGSVGElement>) {
+    const image = canvasImage.current;
     const rect = event.currentTarget.getBoundingClientRect();
-    const x = (event.clientX - rect.left) / rect.width;
-    const y = (event.clientY - rect.top) / rect.height;
-    setDot({ x, y }); setError("");
+    if (!image || !rect.width || !rect.height) return null;
+    return {
+      x: Math.max(0, Math.min(image.naturalWidth, (event.clientX - rect.left) / rect.width * image.naturalWidth)),
+      y: Math.max(0, Math.min(image.naturalHeight, (event.clientY - rect.top) / rect.height * image.naturalHeight)),
+    };
+  }
+
+  function startPainting(event: React.PointerEvent<SVGSVGElement>) {
+    if (!pending || busy || !current) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const point = brushPoint(event);
+    const image = canvasImage.current;
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (!point || !image || !rect.width) return;
+    const width = brushSize * image.naturalWidth / rect.width;
+    setStrokes(previous => [...previous, { points: [point], width }]);
+    setPainting(true); setError("");
+  }
+
+  function continuePainting(event: React.PointerEvent<SVGSVGElement>) {
+    if (!painting) return;
+    const point = brushPoint(event);
+    if (!point) return;
+    setStrokes(previous => previous.map((stroke, index) => index === previous.length - 1
+      ? { ...stroke, points: [...stroke.points, point] }
+      : stroke));
+  }
+
+  function finishPainting() {
+    setPainting(false);
+  }
+
+  async function createMask(image: HTMLImageElement) {
+    const scale = Math.min(1, 1024 / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("No pude preparar la selección. Recarga la foto y vuelve a pintar.");
+    context.fillStyle = "#000";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.scale(scale, scale);
+    context.strokeStyle = "#fff";
+    context.fillStyle = "#fff";
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    for (const stroke of strokes) {
+      context.lineWidth = stroke.width;
+      const [first, ...rest] = stroke.points;
+      if (!first) continue;
+      if (rest.length === 0) {
+        context.beginPath(); context.arc(first.x, first.y, stroke.width / 2, 0, Math.PI * 2); context.fill();
+        continue;
+      }
+      context.beginPath(); context.moveTo(first.x, first.y);
+      for (const point of rest) context.lineTo(point.x, point.y);
+      context.stroke();
+    }
+    return new Promise<Blob>((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("No pude generar la máscara de selección.")), "image/png"));
   }
 
   async function applyEdit() {
-    if (!dot || !pending || !bike || !current || busy) return;
-    setBusy("Generando el cambio con Amazon Bedrock…"); setError("");
+    const image = canvasImage.current;
+    if (!strokes.length || !image || !pending || !bike || !current || busy) return;
+    setBusy("Aplicando el cambio con Stability AI…"); setError("");
     try {
       const form = new FormData(); form.append("image", current.blob);
-      form.append("x", String(dot.x)); form.append("y", String(dot.y));
+      form.append("mask_file", await createMask(image), "seleccion.png");
       form.append("prompt", pending.prompt); form.append("part", pending.part); form.append("model", bike.name);
       const response = await apiFetch("/api/edit", { method: "POST", body: form });
       if (!response.ok) throw new Error(await readError(response, "No pude aplicar el cambio."));
       const blob = await response.blob();
       setVersions(v => [...v.slice(0, at + 1), { url: URL.createObjectURL(blob), blob, label: pending.part }]);
-      setAt(at + 1); setMsgs(m => [...m, { role: "assistant", content: `Listo: ${pending.part} actualizado con Amazon Bedrock.` }]);
-      setPending(null); setDot(null);
+      setAt(at + 1); setMsgs(m => [...m, { role: "assistant", content: `Listo: ${pending.part} actualizado con Stability AI.` }]);
+      setPending(null); setStrokes([]);
     } catch (err) { setError(err instanceof Error ? err.message : "Falló la edición. Inténtalo de nuevo."); }
     setBusy("");
   }
@@ -177,7 +243,7 @@ export default function App() {
   }
 
   function goHome() {
-    setScreen("home"); setBike(null); setVersions([]); setAt(0); setPending(null); setDot(null); setError(""); window.scrollTo({ top: 0, behavior: "smooth" });
+    setScreen("home"); setBike(null); setVersions([]); setAt(0); setPending(null); setStrokes([]); setError(""); window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   return (
@@ -226,7 +292,7 @@ export default function App() {
             </section>
 
             {catalogError && <div className="inline-warning"><CircleHelp size={16} />{catalogError}</div>}
-            {serviceStatus && (!serviceStatus.chat_ready || !serviceStatus.image_ready) && <div className="inline-warning"><CircleHelp size={16} /><span>{!serviceStatus.chat_ready && !serviceStatus.image_ready ? <>Configura <b>GEMINI_API_KEY</b> para el copiloto y habilita Amazon Bedrock en AWS para editar fotos.</> : !serviceStatus.chat_ready ? <>Configura <b>GEMINI_API_KEY</b> para activar el copiloto.</> : <>El copiloto está activo; habilita Amazon Bedrock en AWS para editar fotos.</>}</span></div>}
+            {serviceStatus && (!serviceStatus.chat_ready || !serviceStatus.image_ready) && <div className="inline-warning"><CircleHelp size={16} /><span>{!serviceStatus.chat_ready && !serviceStatus.image_ready ? <>Configura <b>GEMINI_API_KEY</b> para el copiloto y <b>STABILITY_API_KEY</b> para editar fotos.</> : !serviceStatus.chat_ready ? <>Configura <b>GEMINI_API_KEY</b> para activar el copiloto.</> : <>El copiloto está activo; configura <b>STABILITY_API_KEY</b> para editar fotos.</>}</span></div>}
 
             <section className="models-section section-pad" id="motos">
               <div className="section-heading">
@@ -262,7 +328,7 @@ export default function App() {
                 <div className="steps">
                   <div className="step"><span className="step-number">01</span><div><h3>Elige o sube</h3><p>Empieza con una moto de referencia o una foto lateral de la tuya.</p></div></div>
                   <div className="step"><span className="step-number">02</span><div><h3>Cuéntale a Gemini</h3><p>Describe tu idea con tus palabras. La IA concreta la pieza y el estilo.</p></div></div>
-                  <div className="step"><span className="step-number">03</span><div><h3>Señala y transforma</h3><p>Señala la pieza y aplica una edición real con Amazon Bedrock.</p></div></div>
+                  <div className="step"><span className="step-number">03</span><div><h3>Pinta y transforma</h3><p>Marca la zona de la pieza y aplica una edición real con Stability AI.</p></div></div>
                 </div>
                 <button className="text-link" onClick={goToModels}>Empezar a explorar <ArrowRight size={16} /></button>
               </div>
@@ -280,8 +346,8 @@ export default function App() {
               <div className="faq-intro"><div className="eyebrow dark"><span className="eyebrow-line" /> ANTES DE ARRANCAR</div><h2>Preguntas rápidas.</h2><p>Lo esencial para entrar al taller con confianza.</p></div>
               <div className="faq-list">
                 <details><summary>¿Necesito crear una cuenta para probar? <ChevronDown size={18} /></summary><p>No. Puedes elegir un modelo y comenzar en el momento. La cuenta es opcional y sirve para identificar tu sesión en este dispositivo.</p></details>
-                <details><summary>¿Las modificaciones son imágenes reales? <ChevronDown size={18} /></summary><p>El chat consulta Gemini y las modificaciones se generan con Amazon Bedrock. El punto que señales orienta al modelo para localizar la pieza.</p></details>
-                <details><summary>¿Puedo usar la foto de mi moto? <ChevronDown size={18} /></summary><p>Sí. Entra con cualquier moto de muestra y usa “Subir mi foto” en el taller. Una vista lateral bien iluminada ayuda a detectar mejor las piezas. La foto solo se envía al proveedor de imágenes cuando este está configurado para editar; MotoMod no la publica ni la guarda en la cuenta.</p></details>
+                <details><summary>¿Las modificaciones son imágenes reales? <ChevronDown size={18} /></summary><p>El chat consulta Gemini y las modificaciones se generan con Stability AI. Tú pintas la zona que quieres cambiar y esa máscara guía el inpainting.</p></details>
+                <details><summary>¿Puedo usar la foto de mi moto? <ChevronDown size={18} /></summary><p>Sí. Entra con cualquier moto de muestra y usa “Subir mi foto” en el taller. Una vista lateral bien iluminada ayuda a marcar las piezas. La foto se envía a Stability AI para generar el cambio; MotoMod no la publica ni la guarda en la cuenta.</p></details>
               </div>
             </section>
           </main>
@@ -297,35 +363,46 @@ export default function App() {
           </header>
           <div className="studio-layout">
             <section className="studio-workspace">
-              <div className="studio-toolbar"><div><span className="studio-kicker">ESPACIO DE DISEÑO</span><h1>{bike?.name}</h1></div><div className="toolbar-controls"><button disabled={at === 0 || !!busy} onClick={() => { setAt(at - 1); setPending(null); setDot(null); }}><RotateCcw size={15} />Deshacer</button><button disabled={at >= versions.length - 1 || !!busy} onClick={() => setAt(at + 1)}>Rehacer</button><button disabled={at === 0} onClick={() => setCompare(v => !v)}><Eye size={15} />{compare ? "Vista única" : "Comparar"}</button><a className="tool-download" href={current?.url} download="mi-moto-modificada.png"><Download size={15} />Guardar</a></div></div>
+              <div className="studio-toolbar"><div><span className="studio-kicker">ESPACIO DE DISEÑO</span><h1>{bike?.name}</h1></div><div className="toolbar-controls"><button disabled={at === 0 || !!busy} onClick={() => { setAt(at - 1); setPending(null); }}><RotateCcw size={15} />Deshacer</button><button disabled={at >= versions.length - 1 || !!busy} onClick={() => { setAt(at + 1); setPending(null); }}>Rehacer</button><button disabled={at === 0} onClick={() => setCompare(v => !v)}><Eye size={15} />{compare ? "Vista única" : "Comparar"}</button><a className="tool-download" href={current?.url} download="mi-moto-modificada.png"><Download size={15} />Guardar</a></div></div>
               <div className="canvas-wrap">
                 {current && <>
-                  {pending && <div className="selection-hint"><Sparkles size={15} />{dot ? `Punto señalado para ${pending.part}. Amazon Bedrock estimará el área a editar.` : `Toca la pieza que quieres cambiar: ${pending.part}`}</div>}
-                  <div className={`canvas${pending && !dot ? " is-selecting" : ""}`}>
-                    <img className="canvas-main" src={current.url} onClick={selectPart} alt={`${bike?.name}, ${current.label}`} draggable={false} />
+                  {pending && <div className="selection-hint"><Sparkles size={15} />{strokes.length ? `Zona marcada para ${pending.part}. Puedes seguir pintando para cubrirla mejor.` : `Pinta la pieza que quieres cambiar: ${pending.part}. Marca también dónde debe ir la pieza nueva. Cada edición consume 5 créditos de Stability AI.`}</div>}
+                  <div className={`canvas${pending ? " is-selecting" : ""}`}>
+                    <div className="canvas-image-frame">
+                      <img ref={canvasImage} className="canvas-main" src={current.url} onLoad={event => setImageDimensions({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} alt={`${bike?.name}, ${current.label}`} draggable={false} />
+                      {pending && imageDimensions && <svg className="paint-overlay" viewBox={`0 0 ${imageDimensions.width} ${imageDimensions.height}`} preserveAspectRatio="none" aria-label={`Pinta la zona de ${pending.part}`} onPointerDown={startPainting} onPointerMove={continuePainting} onPointerUp={finishPainting} onPointerCancel={finishPainting}>
+                        {strokes.map((stroke, i) => {
+                          const first = stroke.points[0];
+                          const path = stroke.points.map((point, j) => `${j === 0 ? "M" : "L"}${point.x},${point.y}`).join(" ");
+                          return stroke.points.length === 1 && first
+                            ? <circle key={i} cx={first.x} cy={first.y} r={stroke.width / 2} fill="rgba(237,174,48,.58)" />
+                            : <path key={i} d={path} fill="none" stroke="rgba(237,174,48,.58)" strokeWidth={stroke.width} strokeLinecap="round" strokeLinejoin="round" />;
+                        })}
+                      </svg>}
+                    </div>
                     {compare && at > 0 && <><img className="compare-before" src={versions[0].url} alt="Vista anterior" style={{ clipPath: `inset(0 ${100 - split}% 0 0)` }} /><span className="compare-label before-label">ANTES</span><span className="compare-label after-label">AHORA</span><input className="compare-slider" type="range" min="0" max="100" value={split} onChange={e => setSplit(Number(e.target.value))} aria-label="Desliza para comparar antes y después" /></>}
-                    {dot && <span className="selection-dot" style={{ left: `${dot.x * 100}%`, top: `${dot.y * 100}%` }} />}
                     {busy && <div className="canvas-progress"><span className="spinner" />{busy}</div>}
                   </div>
-                  {dot && <div className="mask-confirm"><span><Check size={15} /> Punto señalado</span><button onClick={() => setDot(null)}>Cambiar punto</button><button className="confirm-button" onClick={applyEdit} disabled={!!busy}>Aplicar cambio <ArrowRight size={15} /></button></div>}
-                  <div className="version-strip" aria-label="Historial de imágenes">{versions.map((version, i) => <button key={`${version.label}-${i}`} className={i === at ? "version-card active" : "version-card"} disabled={!!busy} onClick={() => { setAt(i); setPending(null); setDot(null); }}><img src={version.url} alt="" /><span><b>{version.label}</b><small>{i === 0 ? "Original" : `Versión ${i + 1}`}</small></span></button>)}</div>
-                  <div className="canvas-footnote"><span><ShieldCheck size={14} />Tu imagen no se publica</span><span>{current.label === "Foto de muestra" ? "Referencia generada · no es el modelo exacto" : "Procesada para esta edición"}</span></div>
+                  {pending && <div className="selection-tools"><label htmlFor="brush-size">Tamaño del pincel <b>{brushSize}px</b></label><input id="brush-size" type="range" min="18" max="90" value={brushSize} onChange={e => setBrushSize(Number(e.target.value))} aria-label="Tamaño del pincel de selección" /><button onClick={() => setStrokes([])} disabled={!strokes.length || !!busy}>Limpiar selección</button></div>}
+                  {strokes.length > 0 && <div className="mask-confirm"><span><Check size={15} /> Zona marcada</span><button onClick={() => setStrokes([])} disabled={!!busy}>Empezar de nuevo</button><button className="confirm-button" onClick={applyEdit} disabled={!!busy}>Aplicar cambio <ArrowRight size={15} /></button></div>}
+                  <div className="version-strip" aria-label="Historial de imágenes">{versions.map((version, i) => <button key={`${version.label}-${i}`} className={i === at ? "version-card active" : "version-card"} disabled={!!busy} onClick={() => { setAt(i); setPending(null); }}><img src={version.url} alt="" /><span><b>{version.label}</b><small>{i === 0 ? "Original" : `Versión ${i + 1}`}</small></span></button>)}</div>
+                  <div className="canvas-footnote"><span><ShieldCheck size={14} />Foto enviada a Stability AI al editar</span><span>{current.label === "Foto de muestra" ? "Referencia generada · no es el modelo exacto" : "Procesada para esta edición"}</span></div>
                 </>}
               </div>
             </section>
             <aside className="chat-panel">
               <div className="chat-heading"><div className="chat-avatar"><Sparkles size={17} /></div><div><b>Copiloto de diseño</b><span className={serviceStatus?.chat_ready ? "provider-ready" : "provider-offline"}><i />{serviceStatus?.chat_ready ? "Gemini · API real activa" : "Gemini · falta configurar API"}</span></div><button onClick={() => setMsgs([{ role: "assistant", content: GREETING }])} title="Nueva conversación"><MoreHorizontal size={19} /></button></div>
               <div className="chat-context"><MessageCircle size={14} /><span>Diseñando para <b>{bike?.name}</b></span></div>
-              {serviceStatus && (!serviceStatus.chat_ready || !serviceStatus.image_ready) && <div className="service-warning"><CircleHelp size={14} /><span>{!serviceStatus.chat_ready && !serviceStatus.image_ready ? "Falta GEMINI_API_KEY para el chat. La edición de imágenes requiere Amazon Bedrock habilitado en AWS." : !serviceStatus.chat_ready ? "Falta GEMINI_API_KEY para activar el chat real." : "El chat está activo. La edición de imágenes requiere Amazon Bedrock habilitado en AWS."}</span></div>}
+              {serviceStatus && (!serviceStatus.chat_ready || !serviceStatus.image_ready) && <div className="service-warning"><CircleHelp size={14} /><span>{!serviceStatus.chat_ready && !serviceStatus.image_ready ? "Faltan GEMINI_API_KEY para el chat y STABILITY_API_KEY para editar fotos." : !serviceStatus.chat_ready ? "Falta GEMINI_API_KEY para activar el chat real." : "El chat está activo. Configura STABILITY_API_KEY para editar fotos."}</span></div>}
               <div className="chat-messages" aria-live="polite">
                 {msgs.map((message, i) => <div key={i} className={`chat-bubble ${message.role}`}><p>{message.content}</p>{message.role === "assistant" && i > 0 && <small><Sparkles size={11} /> Gemini</small>}</div>)}
-                {busy && !dot && <div className="chat-bubble assistant"><div className="typing-dots"><i /><i /><i /></div><small>{busy}</small></div>}
+                {busy && <div className="chat-bubble assistant"><div className="typing-dots"><i /><i /><i /></div><small>{busy}</small></div>}
                 <div ref={chatEnd} />
               </div>
               {error && <div className="chat-error" role="alert"><CircleHelp size={16} /><span>{error}</span></div>}
               {msgs.length <= 1 && <div className="prompt-suggestions"><span>IDEAS PARA EMPEZAR</span>{IDEAS.map(idea => <button key={idea} onClick={() => void send(idea)} disabled={!!busy}>{idea}<ArrowUpRightIcon /></button>)}</div>}
-              {pending && !busy && !dot && <div className="part-prompt"><Sparkles size={15} /><span>Gemini sugiere modificar <b>{pending.part}</b>. Toca esa pieza; Bedrock usará el punto como referencia visual.</span></div>}
-              {pending && !busy && <button className="cancel-edit" onClick={() => { setPending(null); setDot(null); }}>Cancelar selección</button>}
+              {pending && !busy && !strokes.length && <div className="part-prompt"><Sparkles size={15} /><span>Gemini sugiere modificar <b>{pending.part}</b>. Pinta la zona de esa pieza y el área donde quieres que aparezca el cambio.</span></div>}
+              {pending && !busy && <button className="cancel-edit" onClick={() => { setPending(null); setStrokes([]); }}>Cancelar selección</button>}
               <div className="chat-compose"><textarea value={text} rows={2} disabled={!!busy} placeholder="Describe tu idea…" aria-label="Describe la modificación" onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(text); } }} /><button className="send-button" onClick={() => void send(text)} disabled={!!busy || !text.trim()} aria-label="Enviar mensaje"><ArrowRight size={18} /></button><small>Enter para enviar · Shift + Enter para una nueva línea</small></div>
             </aside>
           </div>

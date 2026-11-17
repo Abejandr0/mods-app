@@ -1,12 +1,8 @@
 import hashlib, io, json, os, re, secrets, sqlite3
-import base64
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from contextlib import contextmanager
 import httpx
-import boto3
-from botocore.config import Config
-from botocore.exceptions import BotoCoreError, ClientError
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response as FastAPIResponse, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,9 +13,7 @@ from pydantic import BaseModel
 load_dotenv()
 app = FastAPI()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
-AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
-BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "amazon.titan-image-generator-v2:0")
-BEDROCK_ENABLED = os.getenv("BEDROCK_ENABLED", "true").lower() in ("1", "true", "yes")
+STABILITY_API_URL = "https://api.stability.ai/v2beta/stable-image/edit/inpaint"
 DATA_DIR = Path(os.getenv("WORKSHOP_DATA_DIR", Path(__file__).parent / "data"))
 DB_PATH = DATA_DIR / "workshop.sqlite3"
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
@@ -56,7 +50,7 @@ SYSTEM = """Eres el asistente de un simulador de modificaciones de motos. Habla 
 La moto del usuario es: {model}. Si no ha dicho qué quiere cambiar, pregúntalo y sugiere ideas (rines, escape, tanque, manillar, farola, asiento, color).
 Cuando tengas UN cambio concreto, devuélvelo. Máximo un cambio por turno.
 Responde SIEMPRE y SOLO con JSON: {"reply": "texto para el usuario", "edit": null o {"part": "pieza en español, corta", "prompt": "descripción en inglés de cómo debe verse la pieza nueva"}}.
-Si hay edit, en reply pídele que toque esa pieza en la foto."""
+Si hay edit, en reply pídele que pinte esa pieza en la foto para delimitar el área del cambio."""
 
 
 class Chat(BaseModel):
@@ -232,7 +226,7 @@ def catalog():
 def service_status():
     return {
         "chat_ready": bool(os.getenv("GEMINI_API_KEY")),
-        "image_ready": BEDROCK_ENABLED,
+        "image_ready": bool(os.getenv("STABILITY_API_KEY")),
         "ai_is_simulated": False,
     }
 
@@ -313,14 +307,6 @@ def image_bytes(image: Image.Image, fmt: str = "PNG") -> bytes:
     return output.getvalue()
 
 
-def bedrock_runtime():
-    return boto3.client(
-        "bedrock-runtime",
-        region_name=AWS_REGION,
-        config=Config(connect_timeout=10, read_timeout=180, retries={"total_max_attempts": 1, "mode": "standard"}),
-    )
-
-
 def mask_label(part: str) -> str:
     labels = {
         "rin": "motorcycle wheel rims", "rueda": "motorcycle wheel", "rines": "motorcycle wheel rims",
@@ -337,47 +323,62 @@ def mask_label(part: str) -> str:
 @app.post("/api/edit")
 def edit(
     image: UploadFile = File(...),
-    x: float = Form(...),
-    y: float = Form(...),
+    mask_file: UploadFile = File(...),
     prompt: str = Form(...),
     part: str = Form("pieza"),
     model: str = Form("moto"),
 ):
     try:
-        if not BEDROCK_ENABLED:
-            raise HTTPException(503, "Amazon Bedrock está desactivado en la configuración del servidor.")
-        if not 0 <= x <= 1 or not 0 <= y <= 1:
-            raise HTTPException(422, "El punto seleccionado quedó fuera de la foto. Vuelve a tocar la pieza.")
+        api_key = os.getenv("STABILITY_API_KEY")
+        if not api_key:
+            raise HTTPException(503, "Falta STABILITY_API_KEY en la configuración del backend para editar fotos.")
         if not prompt.strip() or len(prompt) > 512:
             raise HTTPException(422, "La descripción del cambio debe tener entre 1 y 512 caracteres.")
         img = prepare_image(Image.open(image.file))
         width, height = img.size
+        mask = Image.open(mask_file.file).convert("L").resize((width, height), Image.Resampling.LANCZOS)
+        mask = mask.point(lambda value: 255 if value > 127 else 0)
+        selected_pixels = mask.histogram()[255]
+        if selected_pixels == 0:
+            raise HTTPException(422, "Pinta sobre la pieza que quieres modificar antes de aplicar el cambio.")
+        if selected_pixels > width * height * 0.65:
+            raise HTTPException(422, "La selección cubre casi toda la imagen. Limpia la zona y pinta solo la pieza.")
+
         target = mask_label(part)
-        params = {
-            "image": base64.b64encode(image_bytes(img, "JPEG")).decode("ascii"),
-            "text": (
-                f"Photorealistic edit of the same {model} motorcycle. Change only its {target}: {prompt}. "
-                "Preserve the original camera angle, lighting, shadows, background, motorcycle geometry, "
-                "and every other part. Make the replacement physically plausible and naturally integrated."
-            )[:512],
-            "maskPrompt": (
-                f"The {target} near coordinates approximately {round(x * 100)}% from the left "
-                f"and {round(y * 100)}% from the top of the image. Mask only that motorcycle part."
-            )[:512],
-        }
-        body = json.dumps({
-            "taskType": "INPAINTING",
-            "inPaintingParams": params,
-            "imageGenerationConfig": {"numberOfImages": 1, "quality": "standard", "cfgScale": 8.0},
-        })
-        result = bedrock_runtime().invoke_model(
-            modelId=BEDROCK_MODEL_ID, body=body, accept="application/json", contentType="application/json"
+        response = httpx.post(
+            STABILITY_API_URL,
+            headers={"Authorization": f"Bearer {api_key}", "Accept": "image/*"},
+            files={
+                "image": ("moto.jpg", image_bytes(img, "JPEG"), "image/jpeg"),
+                "mask": ("seleccion.png", image_bytes(mask), "image/png"),
+            },
+            data={
+                "prompt": (
+                    f"Photorealistic product photo of the same {model} motorcycle. Change only the selected "
+                    f"area, which is the {target}: {prompt}. Preserve the original camera angle, lighting, "
+                    "shadows, background, motorcycle geometry, and every unselected part. Make the replacement "
+                    "mechanically plausible and naturally integrated."
+                )[:10000],
+                "negative_prompt": "different motorcycle, changed background, extra parts, distorted geometry, blurry details",
+                "grow_mask": "8",
+                "output_format": "png",
+                "style_preset": "photographic",
+            },
+            timeout=httpx.Timeout(180, connect=15),
         )
-        model_result = json.loads(result["body"].read())
-        if model_result.get("error") or not model_result.get("images"):
-            raise ValueError(model_result.get("error") or "Titan Image Generator no devolvió una imagen")
-        generated = base64.b64decode(model_result["images"][0], validate=True)
-        edited = Image.open(io.BytesIO(generated)).convert("RGB")
+        if not response.is_success:
+            if response.status_code == 401:
+                raise HTTPException(503, "Stability AI no aceptó la clave. Revisa STABILITY_API_KEY en el backend.")
+            if response.status_code == 402:
+                raise HTTPException(402, "Se agotaron los créditos de Stability AI. Revisa el saldo de tu cuenta.")
+            if response.status_code == 403:
+                raise HTTPException(422, "Stability AI bloqueó esta solicitud por sus filtros de contenido. Ajusta el cambio e inténtalo otra vez.")
+            if response.status_code == 422:
+                raise HTTPException(422, "Stability AI no pudo procesar la foto o la máscara. Pinta una zona más clara y vuelve a probar.")
+            if response.status_code == 429:
+                raise HTTPException(429, "Stability AI recibió demasiadas solicitudes. Espera un momento y vuelve a probar.")
+            raise HTTPException(502, f"Stability AI respondió con un error ({response.status_code}). Inténtalo de nuevo más tarde.")
+        edited = Image.open(io.BytesIO(response.content)).convert("RGB")
         if edited.size != (width, height):
             edited = edited.resize((width, height), Image.Resampling.LANCZOS)
         output = io.BytesIO()
@@ -385,18 +386,11 @@ def edit(
         return Response(output.getvalue(), media_type="image/png")
     except HTTPException:
         raise
-    except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
+    except httpx.TimeoutException as exc:
+        raise HTTPException(504, "Stability AI tardó demasiado en editar la foto. Espera un momento e inténtalo otra vez.") from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(502, "No pude conectar con Stability AI. Revisa la conexión del servidor e inténtalo otra vez.") from exc
+    except (OSError, ValueError) as exc:
         raise HTTPException(422, "No pude procesar la foto. Sube un JPG o PNG válido e inténtalo de nuevo.") from exc
-    except ClientError as exc:
-        code = exc.response.get("Error", {}).get("Code", "BedrockError")
-        if code in ("AccessDeniedException", "UnrecognizedClientException"):
-            raise HTTPException(503, "Bedrock no autorizó la solicitud. Revisa el rol IAM y el permiso bedrock:InvokeModel.") from exc
-        if code in ("ThrottlingException", "ServiceQuotaExceededException"):
-            raise HTTPException(429, "Bedrock alcanzó el límite de solicitudes. Espera un momento e inténtalo de nuevo.") from exc
-        if code in ("ValidationException", "ResourceNotFoundException"):
-            raise HTTPException(502, f"Bedrock rechazó el formato o modelo ({code}). Revisa la región y el modelo configurados.") from exc
-        raise HTTPException(502, f"Bedrock no pudo editar la imagen ({code}). Revisa el modelo y la región configurados.") from exc
-    except BotoCoreError as exc:
-        raise HTTPException(502, "No pude conectar con Bedrock. Revisa la región y la conexión del servidor.") from exc
     except Exception as exc:
-        raise HTTPException(502, "No pude aplicar el cambio. Bedrock tardó o respondió con un error; inténtalo de nuevo.") from exc
+        raise HTTPException(502, "No pude aplicar el cambio. Stability AI tardó o respondió con un error; inténtalo de nuevo.") from exc
