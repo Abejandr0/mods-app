@@ -28,9 +28,9 @@ const CATALOG: Bike[] = [
   { id: "classic-350", name: "Royal Enfield Classic 350", type: "Clásica" },
 ];
 const SAMPLE: Record<string, { file: string; label: string; detail: string }> = {
-  Deportiva: { file: "sport.webp", label: "Deportiva", detail: "Carénado y líneas aerodinámicas" },
-  Naked: { file: "naked.webp", label: "Naked", detail: "Motor y estructura a la vista" },
-  Clásica: { file: "classic.webp", label: "Clásica", detail: "Silueta retro y detalles cromados" },
+  Deportiva: { file: "sport.jpg", label: "Deportiva", detail: "KTM RC 390 · referencia real" },
+  Naked: { file: "naked.jpg", label: "Naked", detail: "Kawasaki naked · referencia real" },
+  Clásica: { file: "classic.jpg", label: "Clásica", detail: "BMW café racer · referencia real" },
 };
 const GREETING = "¡Listo! Esta es una foto de muestra para empezar. Dime qué quieres personalizar; la IA real te indicará qué parte seleccionar.";
 const IDEAS = ["Rines color bronce", "Escape deportivo negro", "Tanque verde oliva", "Manillar estilo café racer"];
@@ -252,7 +252,7 @@ export default function App() {
         <>
           <header className="site-nav">
             <a className="brand" href="#inicio" onClick={e => { e.preventDefault(); window.scrollTo({ top: 0, behavior: "smooth" }); }} aria-label="MotoMod, inicio">
-              <span className="brand-mark">M<span>·</span></span><span className="brand-word">MOTOMOD<small>TALLER DIGITAL</small></span>
+              <MotoMark /><span className="brand-word">MOTOMOD<small>TALLER DIGITAL</small></span>
             </a>
             <nav className={mobileMenu ? "nav-links open" : "nav-links"} aria-label="Navegación principal">
               <a href="#como-funciona" onClick={() => setMobileMenu(false)}>Cómo funciona</a>
@@ -280,8 +280,8 @@ export default function App() {
                 </div>
                 <div className="hero-proof"><div className="proof-dot"><Sparkles size={14} /></div><span><b>Ediciones con IA real</b><br />Tu foto, transformada por ti.</span></div>
               </div>
-              <div className="hero-caption"><span className="caption-line" /> INSPIRACIÓN · NAKED STREET <span>01 / 03</span></div>
-              <div className="hero-image-note"><Sparkles size={13} /> Imagen de inspiración generada</div>
+              <div className="hero-caption"><span className="caption-line" /> INSPIRACIÓN · GARAGE NOCTURNO <span>01 / 04</span></div>
+              <div className="hero-image-note"><Sparkles size={13} /> Foto real · Unsplash</div>
             </section>
 
             <section className="trust-strip" aria-label="Ventajas">
@@ -314,12 +314,12 @@ export default function App() {
                   </article>;
                 })}
               </div>
-              <p className="sample-disclaimer"><CircleHelp size={15} /> Las imágenes son referencias visuales generadas por categoría; no representan fotografías exactas de cada modelo.</p>
+              <p className="sample-disclaimer"><CircleHelp size={15} /> Fotos reales de motos usadas como referencia; no representan fotografías exactas de los modelos anunciados. Créditos en public/samples/PHOTO_CREDITS.md.</p>
             </section>
 
             <section className="how-section section-pad" id="como-funciona">
               <div className="how-art" role="img" aria-label="Motocicleta de muestra preparada para personalización">
-                <img src="/samples/classic.webp" alt="Moto clásica de muestra" loading="lazy" />
+                <img src="/samples/classic.jpg" alt="Motocicleta café racer clásica de referencia" loading="lazy" />
                 <div className="art-tag"><span /> SELECCIÓN INTELIGENTE</div>
                 <div className="art-callout"><Sparkles size={16} /><span>La IA propone la pieza<br /><b>tú guías el cambio</b></span></div>
               </div>
@@ -352,13 +352,13 @@ export default function App() {
             </section>
           </main>
 
-          <footer className="site-footer"><a className="brand footer-brand" href="#inicio"><span className="brand-mark">M<span>·</span></span><span className="brand-word">MOTOMOD<small>TALLER DIGITAL</small></span></a><span>Diseñado para imaginar lo que viene.</span><div><a href="#como-funciona">Cómo funciona</a><button onClick={() => { setAuthMode("signup"); setAuthOpen(true); }}>Crear cuenta</button><a href="#preguntas">Ayuda</a></div><small>© 2026 MotoMod · Proyecto académico</small></footer>
+          <footer className="site-footer"><a className="brand footer-brand" href="#inicio"><MotoMark /><span className="brand-word">MOTOMOD<small>TALLER DIGITAL</small></span></a><span>Diseñado para imaginar lo que viene.</span><div><a href="#como-funciona">Cómo funciona</a><button onClick={() => { setAuthMode("signup"); setAuthOpen(true); }}>Crear cuenta</button><a href="#preguntas">Ayuda</a></div><small>© 2026 MotoMod · Proyecto académico</small></footer>
         </>
       ) : (
         <main className="studio-page">
           <header className="studio-header">
             <button className="studio-back" onClick={goHome}><ArrowLeft size={17} /><span>Salir del taller</span></button>
-            <a className="brand studio-brand" href="#inicio" onClick={e => { e.preventDefault(); goHome(); }}><span className="brand-mark">M<span>·</span></span><span className="brand-word">MOTOMOD<small>TALLER DIGITAL</small></span></a>
+            <a className="brand studio-brand" href="#inicio" onClick={e => { e.preventDefault(); goHome(); }}><MotoMark /><span className="brand-word">MOTOMOD<small>TALLER DIGITAL</small></span></a>
             <div className="studio-menu"><span className="studio-bike-name">{bike?.name}</span><button className="studio-account" onClick={() => user ? setAccountView(true) : (setAuthMode("signup"), setAuthOpen(true))}>{user ? <UserRound size={16} /> : <LogIn size={16} />}{user ? user.name.split(" ")[0] : "Crear cuenta"}</button></div>
           </header>
           <div className="studio-layout">
@@ -386,7 +386,7 @@ export default function App() {
                   {pending && <div className="selection-tools"><label htmlFor="brush-size">Tamaño del pincel <b>{brushSize}px</b></label><input id="brush-size" type="range" min="18" max="90" value={brushSize} onChange={e => setBrushSize(Number(e.target.value))} aria-label="Tamaño del pincel de selección" /><button onClick={() => setStrokes([])} disabled={!strokes.length || !!busy}>Limpiar selección</button></div>}
                   {strokes.length > 0 && <div className="mask-confirm"><span><Check size={15} /> Zona marcada</span><button onClick={() => setStrokes([])} disabled={!!busy}>Empezar de nuevo</button><button className="confirm-button" onClick={applyEdit} disabled={!!busy}>Aplicar cambio <ArrowRight size={15} /></button></div>}
                   <div className="version-strip" aria-label="Historial de imágenes">{versions.map((version, i) => <button key={`${version.label}-${i}`} className={i === at ? "version-card active" : "version-card"} disabled={!!busy} onClick={() => { setAt(i); setPending(null); }}><img src={version.url} alt="" /><span><b>{version.label}</b><small>{i === 0 ? "Original" : `Versión ${i + 1}`}</small></span></button>)}</div>
-                  <div className="canvas-footnote"><span><ShieldCheck size={14} />Foto enviada a Stability AI al editar</span><span>{current.label === "Foto de muestra" ? "Referencia generada · no es el modelo exacto" : "Procesada para esta edición"}</span></div>
+                  <div className="canvas-footnote"><span><ShieldCheck size={14} />Foto enviada a Stability AI al editar</span><span>{current.label === "Foto de muestra" ? "Foto real de referencia · no es el modelo exacto" : "Procesada para esta edición"}</span></div>
                 </>}
               </div>
             </section>
@@ -439,3 +439,7 @@ export default function App() {
 }
 
 function ArrowUpRightIcon() { return <ArrowRight size={15} className="arrow-up-right" aria-hidden="true" />; }
+
+function MotoMark() {
+  return <span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 40"><path d="M20.7 1.5 4.4 22.1h10.1L11.8 38.5l16-22.2H17.5z" /></svg></span>;
+}

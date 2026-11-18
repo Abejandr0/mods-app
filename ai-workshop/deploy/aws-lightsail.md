@@ -19,10 +19,28 @@ Guarda `STABILITY_API_KEY` solo en el servidor, limita los permisos del archivo 
 
 ## Publicar cambios
 
-1. En tu computador, dentro de `ai-workshop/frontend`, ejecuta `npm ci` y `npm run build`.
-2. Sube el contenido de `ai-workshop/frontend/dist` al directorio web de Lightsail.
-3. Sube el backend actualizado y ejecuta `pip install -r backend/requirements.txt` en su entorno virtual.
-4. Reinicia el servicio `motomod-api` y verifica `/healthz` y `/api/status`. Debe mostrar `chat_ready: true`, `image_ready: true` y `ai_is_simulated: false`.
-5. Haz una edición de prueba: pinta una región pequeña de una foto, confirma la selección y envía el cambio.
+Para publicar cambios de la interfaz y sus imágenes, compila en tu computador desde la raíz del repo. Sustituye la ruta de la llave SSH si está guardada en otro lugar:
+
+```bash
+cd ai-workshop/frontend
+npm ci
+npm run build
+ssh -i /home/TU_USUARIO/Downloads/tu-llave.pem ubuntu@motomod.ddnsfree.com 'rm -rf /tmp/motomod-dist'
+scp -i /home/TU_USUARIO/Downloads/tu-llave.pem -r dist ubuntu@motomod.ddnsfree.com:/tmp/motomod-dist
+```
+
+Luego entra a Lightsail y publica el build:
+
+```bash
+ssh -i /home/TU_USUARIO/Downloads/tu-llave.pem ubuntu@motomod.ddnsfree.com
+sudo mkdir -p /var/www/motomod
+sudo find /var/www/motomod -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+sudo cp -a /tmp/motomod-dist/. /var/www/motomod/
+sudo chown -R www-data:www-data /var/www/motomod
+curl -fsS https://motomod.ddnsfree.com/healthz
+curl -fsS https://motomod.ddnsfree.com/api/status
+```
+
+Este cambio solo modifica el frontend: no hace falta subir el backend ni reiniciar `motomod-api` o Caddy. La copia reemplaza los archivos estáticos publicados, incluidas las fotos. Verifica que la portada cargue y que `/api/status` responda. Para cambios futuros del backend, sube también `ai-workshop/backend`, instala sus dependencias en `/opt/motomod/.venv` si cambió `requirements.txt` y reinicia con `sudo systemctl restart motomod-api`.
 
 La configuración de Caddy y systemd del repositorio puede servir como referencia para el proxy HTTPS y el proceso FastAPI. No sigas las instrucciones de Bedrock en [la guía EC2 anterior](aws-ec2-bedrock.md), pues corresponden al proveedor que se reemplazó.
