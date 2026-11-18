@@ -33,7 +33,24 @@ const SAMPLE: Record<string, { file: string; label: string; detail: string }> = 
   Clásica: { file: "classic.jpg", label: "Clásica", detail: "BMW café racer · referencia real" },
 };
 const GREETING = "¡Listo! Esta es una foto de muestra para empezar. Dime qué quieres personalizar; la IA real te indicará qué parte seleccionar.";
-const IDEAS = ["Rines color bronce", "Escape deportivo negro", "Tanque verde oliva", "Manillar estilo café racer"];
+const IDEAS = [
+  "Rines color bronce", "Escape deportivo negro", "Tanque verde oliva", "Manillar estilo café racer",
+  "Pinta la moto en azul eléctrico", "Agrega una franja dorada al tanque", "Cambia el asiento por uno café",
+  "Ponle espejos más pequeños", "Haz que el guardabarros sea negro mate", "Cambia el faro por uno redondo LED",
+  "Agrega detalles rojos en los rines", "Dale un estilo scrambler", "Ponle un escape cromado corto",
+  "Cambia el tanque a color crema", "Agrega una parrilla trasera discreta", "Pinta las tapas laterales de negro",
+  "Haz el asiento más deportivo", "Añade una línea blanca al tanque", "Cambia el manillar por uno más bajo",
+  "Dale un acabado verde militar mate",
+];
+
+function pickIdeas(count = 4) {
+  const shuffled = [...IDEAS];
+  for (let index = shuffled.length - 1; index > 0; index--) {
+    const swap = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[swap]] = [shuffled[swap], shuffled[index]];
+  }
+  return shuffled.slice(0, count);
+}
 
 async function readError(response: Response, fallback: string) {
   const body = await response.json().catch(() => ({}));
@@ -47,6 +64,7 @@ export default function App() {
   const [versions, setVersions] = useState<Version[]>([]);
   const [at, setAt] = useState(0);
   const [msgs, setMsgs] = useState<Msg[]>([]);
+  const [suggestions, setSuggestions] = useState<string[]>(pickIdeas);
   const [text, setText] = useState("");
   const [pending, setPending] = useState<Edit | null>(null);
   const [busy, setBusy] = useState("");
@@ -112,6 +130,7 @@ export default function App() {
     const blob = await response.blob();
     const version = { url: URL.createObjectURL(blob), blob, label: "Foto de muestra" };
     setBike(selectedBike); setVersions([version]); setAt(0); setScreen("studio"); setStrokes([]);
+    setSuggestions(pickIdeas());
     setMsgs([{ role: "assistant", content: `${GREETING} Representa el estilo ${sample.label}; no es una fotografía del modelo ${selectedBike.name}.` }]);
     setPending(null); setError(""); setCompare(false); window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -121,6 +140,7 @@ export default function App() {
     if (!file.type.startsWith("image/")) { setError("Elige una imagen JPG, PNG o WebP."); return; }
     const version = { url: URL.createObjectURL(file), blob: file, label: "Mi foto" };
     setVersions(v => [...v.slice(0, at + 1), version]); setAt(at + 1); setError(""); setPending(null); setStrokes([]);
+    setSuggestions(pickIdeas());
     setMsgs(m => [...m, { role: "assistant", content: "Foto lista. Cuéntame qué te gustaría cambiar." }]);
   }
 
@@ -391,7 +411,7 @@ export default function App() {
               </div>
             </section>
             <aside className="chat-panel">
-              <div className="chat-heading"><div className="chat-avatar"><Sparkles size={17} /></div><div><b>Copiloto de diseño</b><span className={serviceStatus?.chat_ready ? "provider-ready" : "provider-offline"}><i />{serviceStatus?.chat_ready ? "Gemini · API real activa" : "Gemini · falta configurar API"}</span></div><button onClick={() => setMsgs([{ role: "assistant", content: GREETING }])} title="Nueva conversación"><MoreHorizontal size={19} /></button></div>
+              <div className="chat-heading"><div className="chat-avatar"><Sparkles size={17} /></div><div><b>Copiloto de diseño</b><span className={serviceStatus?.chat_ready ? "provider-ready" : "provider-offline"}><i />{serviceStatus?.chat_ready ? "Gemini · API real activa" : "Gemini · falta configurar API"}</span></div><button onClick={() => { setMsgs([{ role: "assistant", content: GREETING }]); setSuggestions(pickIdeas()); setPending(null); setError(""); }} title="Nueva conversación"><MoreHorizontal size={19} /></button></div>
               <div className="chat-context"><MessageCircle size={14} /><span>Diseñando para <b>{bike?.name}</b></span></div>
               {serviceStatus && (!serviceStatus.chat_ready || !serviceStatus.image_ready) && <div className="service-warning"><CircleHelp size={14} /><span>{!serviceStatus.chat_ready && !serviceStatus.image_ready ? "Faltan GEMINI_API_KEY para el chat y STABILITY_API_KEY para editar fotos." : !serviceStatus.chat_ready ? "Falta GEMINI_API_KEY para activar el chat real." : "El chat está activo. Configura STABILITY_API_KEY para editar fotos."}</span></div>}
               <div className="chat-messages" aria-live="polite">
@@ -400,7 +420,7 @@ export default function App() {
                 <div ref={chatEnd} />
               </div>
               {error && <div className="chat-error" role="alert"><CircleHelp size={16} /><span>{error}</span></div>}
-              {msgs.length <= 1 && <div className="prompt-suggestions"><span>IDEAS PARA EMPEZAR</span>{IDEAS.map(idea => <button key={idea} onClick={() => void send(idea)} disabled={!!busy}>{idea}<ArrowUpRightIcon /></button>)}</div>}
+              {msgs.length <= 1 && <div className="prompt-suggestions"><span>IDEAS PARA EMPEZAR · ALEATORIAS</span>{suggestions.map(idea => <button key={idea} onClick={() => void send(idea)} disabled={!!busy}>{idea}<ArrowUpRightIcon /></button>)}<button className="refresh-suggestions" onClick={() => setSuggestions(pickIdeas())} disabled={!!busy}>Ver otras ideas <RotateCcw size={13} /></button></div>}
               {pending && !busy && !strokes.length && <div className="part-prompt"><Sparkles size={15} /><span>Gemini sugiere modificar <b>{pending.part}</b>. Pinta la zona de esa pieza y el área donde quieres que aparezca el cambio.</span></div>}
               {pending && !busy && <button className="cancel-edit" onClick={() => { setPending(null); setStrokes([]); }}>Cancelar selección</button>}
               <div className="chat-compose"><textarea value={text} rows={2} disabled={!!busy} placeholder="Describe tu idea…" aria-label="Describe la modificación" onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(text); } }} /><button className="send-button" onClick={() => void send(text)} disabled={!!busy || !text.trim()} aria-label="Enviar mensaje"><ArrowRight size={18} /></button><small>Enter para enviar · Shift + Enter para una nueva línea</small></div>

@@ -294,6 +294,7 @@ button:disabled { opacity: .45; cursor: not-allowed !important; }
 .prompt-suggestions button { display: inline-flex; align-items: center; gap: 6px; padding: 7px 9px; border: 1px solid #92958e; border-radius: 0; background: transparent; color: #4d524c; font-size: .66rem; font-weight: 600; cursor: pointer; transition: .15s; }
 .prompt-suggestions button:hover:not(:disabled) { border-color: var(--ink); background: var(--orange-pale); color: var(--ink); }
 .prompt-suggestions button svg { width: 12px; }
+.prompt-suggestions .refresh-suggestions { border-style: dashed; color: var(--ink); }
 .part-prompt { display: flex; align-items: flex-start; gap: 8px; margin: 0 14px 8px; padding: 10px; border: 1px solid #d49a40; background: #ffedc8; color: #63491f; font-size: .69rem; line-height: 1.42; }
 .part-prompt svg { flex: none; color: #a35d27; }
 .cancel-edit { align-self: flex-start; margin: 0 14px 8px; padding: 3px 0; border: 0; border-bottom: 1px solid #898c84; border-radius: 0; background: none; color: #626760; font-size: .67rem; cursor: pointer; }
