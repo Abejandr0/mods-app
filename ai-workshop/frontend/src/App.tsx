@@ -16,6 +16,7 @@ type AuthMode = "login" | "signup";
 type ServiceStatus = { chat_ready: boolean; image_ready: boolean; ai_is_simulated: false };
 type BrushPoint = { x: number; y: number };
 type BrushStroke = { points: BrushPoint[]; width: number };
+type SampleInfo = { file: string; detail: string; assistantNote: string; studioNote: string };
 
 const CATALOG: Bike[] = [
   { id: "gixxer-sf-250", name: "Suzuki Gixxer SF 250", type: "Deportiva" },
@@ -27,12 +28,17 @@ const CATALOG: Bike[] = [
   { id: "cb190r", name: "Honda CB190R", type: "Naked" },
   { id: "classic-350", name: "Royal Enfield Classic 350", type: "Clásica" },
 ];
-const SAMPLE: Record<string, { file: string; label: string; detail: string }> = {
-  Deportiva: { file: "sport.jpg", label: "Deportiva", detail: "KTM RC 390 · referencia real" },
-  Naked: { file: "naked.jpg", label: "Naked", detail: "Kawasaki naked · referencia real" },
-  Clásica: { file: "classic.jpg", label: "Clásica", detail: "BMW café racer · referencia real" },
+const SAMPLE: Record<string, SampleInfo> = {
+  "gixxer-sf-250": { file: "gixxer-sf-250.jpg", detail: "2022 · foto de referencia", assistantNote: "La versión de la foto es 2022; el color puede variar.", studioNote: "Foto de referencia del modelo · año o color pueden variar" },
+  r15: { file: "r15.jpg", detail: "2014 · foto de referencia", assistantNote: "La versión de la foto es 2014; el color puede variar.", studioNote: "Foto de referencia del modelo · año o color pueden variar" },
+  "ninja-400": { file: "ninja-400.jpg", detail: "2018 · foto de referencia", assistantNote: "La versión de la foto es 2018; el color puede variar.", studioNote: "Foto de referencia del modelo · año o color pueden variar" },
+  ns200: { file: "ns200.jpg", detail: "Foto de referencia del modelo", assistantNote: "El año y el color pueden variar.", studioNote: "Foto de referencia del modelo · año o color pueden variar" },
+  "duke-200": { file: "duke-200.jpg", detail: "Foto de referencia del modelo", assistantNote: "El año y el color pueden variar.", studioNote: "Foto de referencia del modelo · año o color pueden variar" },
+  "fz-20": { file: "fz-20.jpg", detail: "FZ-S · versión 2.0 no confirmada", assistantNote: "La imagen muestra una Yamaha FZ-S; no pude confirmar que sea la versión 2.0.", studioNote: "Yamaha FZ-S · versión 2.0 no confirmada" },
+  cb190r: { file: "cb190r.jpg", detail: "CB 190R Repsol · foto de referencia", assistantNote: "La foto muestra la decoración Repsol; el color puede variar.", studioNote: "Foto de referencia del modelo · decoración Repsol" },
+  "classic-350": { file: "classic-350.jpg", detail: "2017 · foto de referencia", assistantNote: "La versión de la foto es 2017; el color puede variar.", studioNote: "Foto de referencia del modelo · año o color pueden variar" },
 };
-const GREETING = "¡Listo! Esta es una foto de muestra para empezar. Dime qué quieres personalizar; la IA real te indicará qué parte seleccionar.";
+const GREETING = "¡Hola! Cuéntame qué te gustaría cambiar en tu moto y te muestro cómo se vería.";
 const IDEAS = [
   "Rines color bronce", "Escape deportivo negro", "Tanque verde oliva", "Manillar estilo café racer",
   "Pinta la moto en azul eléctrico", "Agrega una franja dorada al tanque", "Cambia el asiento por uno café",
@@ -95,6 +101,7 @@ export default function App() {
   const fileInput = useRef<HTMLInputElement>(null);
   const accountModal = useRef<HTMLElement>(null);
   const filteredBikes = bikes.filter(b => filter === "Todas" || b.type === filter);
+  const currentSample = bike ? SAMPLE[bike.id] : undefined;
   const current = versions[at];
 
   useEffect(() => { setStrokes([]); setPainting(false); setImageDimensions(null); }, [current?.url]);
@@ -139,13 +146,17 @@ export default function App() {
   }
 
   async function startSample(selectedBike: Bike) {
-    const sample = SAMPLE[selectedBike.type] || SAMPLE.Naked;
+    const sample = SAMPLE[selectedBike.id];
+    if (!sample) {
+      setCatalogError(`Todavía no hay una foto de referencia para ${selectedBike.name}.`);
+      return;
+    }
     const response = await fetch(`/samples/${sample.file}`);
     const blob = await response.blob();
     const version = { url: URL.createObjectURL(blob), blob, label: "Foto de muestra" };
     setBike(selectedBike); setVersions([version]); setAt(0); setScreen("studio"); setStrokes([]);
     setSuggestions(pickIdeas());
-    setMsgs([{ role: "assistant", content: `${GREETING} Representa el estilo ${sample.label}; no es una fotografía del modelo ${selectedBike.name}.` }]);
+    setMsgs([{ role: "assistant", content: `¡Listo! Cargué una foto de referencia de ${selectedBike.name}. ${sample.assistantNote} Dime qué quieres personalizar.` }]);
     setPending(null); setError(""); setCompare(false); window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -331,16 +342,17 @@ export default function App() {
 
             <section className="models-section section-pad" id="motos">
               <div className="section-heading">
-                <div><div className="eyebrow dark"><span className="eyebrow-line" /> TU PRIMERA VUELTA</div><h2>Elige tu punto de partida.</h2><p>Prueba el taller al instante con una foto de muestra. También puedes reemplazarla por la tuya.</p></div>
+                <div><div className="eyebrow dark"><span className="eyebrow-line" /> TU PRIMERA VUELTA</div><h2>Elige tu punto de partida.</h2><p>Prueba el taller con una foto de referencia de la moto elegida. También puedes reemplazarla por la tuya.</p></div>
                 <div className="catalog-count"><b>08</b><span>MODELOS<br />DISPONIBLES</span></div>
               </div>
               <div className="filters" role="group" aria-label="Filtrar modelos de moto">
                 {["Todas", "Deportiva", "Naked", "Clásica"].map(item => <button key={item} className={filter === item ? "filter-chip selected" : "filter-chip"} onClick={() => setFilter(item)}>{item}</button>)}
-                <span className="filter-note"><Sparkles size={14} /> Fotos de muestra incluidas</span>
+                <span className="filter-note"><Sparkles size={14} /> Foto por modelo</span>
               </div>
               <div className="bike-grid">
                 {filteredBikes.map((item, i) => {
-                  const sample = SAMPLE[item.type] || SAMPLE.Naked;
+                  const sample = SAMPLE[item.id];
+                  if (!sample) return null;
                   return <article className="bike-card" key={item.id} style={{ animationDelay: `${i * 45}ms` }}>
                     <button className="bike-photo" onClick={() => void startSample(item)} aria-label={`Probar ${item.name} con foto de muestra`} style={{ backgroundImage: `url(/samples/${sample.file})` }}>
                       <span className="bike-category">{item.type.toUpperCase()}</span><span className="bike-card-arrow"><ArrowUpRightIcon /></span>
@@ -349,7 +361,7 @@ export default function App() {
                   </article>;
                 })}
               </div>
-              <p className="sample-disclaimer"><CircleHelp size={15} /> Fotos reales de motos usadas como referencia; no representan fotografías exactas de los modelos anunciados. Créditos en public/samples/PHOTO_CREDITS.md.</p>
+              <p className="sample-disclaimer"><CircleHelp size={15} /> Las fotos son referencias del modelo; pueden variar el año, color o versión. La Yamaha FZ 2.0 usa una foto de FZ-S con versión no confirmada. <a href="/samples/PHOTO_CREDITS.md" target="_blank" rel="noreferrer">Ver créditos y licencias</a>.</p>
             </section>
 
             <section className="how-section section-pad" id="como-funciona">
@@ -421,7 +433,7 @@ export default function App() {
                   {pending && <div className="selection-tools"><label htmlFor="brush-size">Tamaño del pincel <b>{brushSize}px</b></label><input id="brush-size" type="range" min="18" max="90" value={brushSize} onChange={e => setBrushSize(Number(e.target.value))} aria-label="Tamaño del pincel de selección" /><button onClick={() => setStrokes([])} disabled={!strokes.length || !!busy}>Limpiar selección</button></div>}
                   {strokes.length > 0 && <div className="mask-confirm"><span><Check size={15} /> Zona marcada</span><button onClick={() => setStrokes([])} disabled={!!busy}>Empezar de nuevo</button><button className="confirm-button" onClick={applyEdit} disabled={!!busy}>Aplicar cambio <ArrowRight size={15} /></button></div>}
                   <div className="version-strip" aria-label="Historial de imágenes">{versions.map((version, i) => <button key={`${version.label}-${i}`} className={i === at ? "version-card active" : "version-card"} disabled={!!busy} onClick={() => { setAt(i); setPending(null); }}><img src={version.url} alt="" /><span><b>{version.label}</b><small>{i === 0 ? "Original" : `Versión ${i + 1}`}</small></span></button>)}</div>
-                  <div className="canvas-footnote"><span><ShieldCheck size={14} />Foto enviada a Stability AI al editar</span><span>{current.label === "Foto de muestra" ? "Foto real de referencia · no es el modelo exacto" : "Procesada para esta edición"}</span></div>
+                  <div className="canvas-footnote"><span><ShieldCheck size={14} />Foto enviada a Stability AI al editar</span><span>{current.label === "Foto de muestra" ? currentSample?.studioNote : "Procesada para esta edición"}</span></div>
                 </>}
               </div>
             </section>

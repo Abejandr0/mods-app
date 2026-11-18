@@ -145,6 +145,7 @@ button:disabled { opacity: .45; cursor: not-allowed !important; }
 .bike-start:hover { transform: translate(-2px, -2px); box-shadow: var(--shadow-small); }
 .sample-disclaimer { display: flex; align-items: center; gap: 7px; margin: 21px 0 0; color: #6b706a; font-size: .7rem; }
 .sample-disclaimer svg { flex: none; }
+.sample-disclaimer a { color: var(--ink); font-weight: 700; text-underline-offset: 2px; }
 
 .how-section { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); align-items: center; gap: clamp(40px, 8vw, 120px); background: #e2e4db; border-top: 2px solid var(--ink); border-bottom: 2px solid var(--ink); }
 .how-art { position: relative; min-width: 0; border: 2px solid var(--ink); background: var(--ink); box-shadow: 8px 8px 0 var(--orange); }

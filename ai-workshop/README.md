@@ -1,8 +1,8 @@
 # Taller virtual de motos
 
-Aplicación web React + TypeScript con un backend FastAPI. La homepage permite entrar al taller al instante con una moto de muestra por categoría o subir una foto propia. El chat usa Gemini API; las modificaciones reales usan Stability AI Inpaint. El usuario pinta el área que quiere editar y el backend envía la foto y la máscara a Stability AI. No hay simulación: si falta una clave, la app explica qué función falta.
+Aplicación web React + TypeScript con un backend FastAPI. La homepage permite entrar al taller al instante con una foto de referencia para cada moto del catálogo o subir una foto propia. El chat usa Gemini API; las modificaciones reales usan Stability AI Inpaint. El usuario pinta el área que quiere editar y el backend envía la foto y la máscara a Stability AI. No hay simulación: si falta una clave, la app explica qué función falta.
 
-Las fotos de muestra son fotografías reales de motocicletas, acreditadas en [`frontend/public/samples/PHOTO_CREDITS.md`](frontend/public/samples/PHOTO_CREDITS.md). Sirven como referencias por categoría y no son imágenes exactas de todos los modelos anunciados.
+Las fotos del catálogo son fotografías reales, descargadas localmente y acreditadas con sus licencias en [`frontend/public/samples/PHOTO_CREDITS.md`](frontend/public/samples/PHOTO_CREDITS.md). El año, el color o los accesorios pueden variar; la foto usada para Yamaha FZ 2.0 corresponde a una FZ-S cuya versión no está confirmada.
 
 ## Requisitos
 
