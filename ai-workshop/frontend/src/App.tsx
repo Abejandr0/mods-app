@@ -1,18 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowDown, ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, CircleHelp,
-  Download, Eye, EyeOff, Gauge, ImagePlus, LogIn, LogOut, Menu, MessageCircle,
+  Download, Eye, EyeOff, FolderOpen, Gauge, ImagePlus, LogIn, LogOut, Menu, MessageCircle,
   Accessibility, Contrast, Languages, Moon, MoreHorizontal, RotateCcw, Settings2, ShieldCheck, Sparkles, Sun, Type, UserRound, X,
+  Trash2,
 } from "lucide-react";
 import { apiFetch } from "./api";
 import { localeNames, translate, type Locale } from "./i18n";
+import { deleteGarageEntry, listGarageEntries, saveGarageEntry, type GarageEntry } from "./garageStorage";
 
 type Bike = { id: string; name: string; type: string };
 type Msg = { role: "user" | "assistant"; content: string };
 type Edit = { part: string; prompt: string };
-type Version = { url: string; blob: Blob; label: string };
+type Version = { id: string; url: string; blob: Blob; label: string };
 type User = { id: number; name: string; email: string };
-type Screen = "home" | "workshop" | "studio";
+type Screen = "home" | "garage" | "workshop" | "studio";
 type AuthMode = "login" | "signup";
 type ServiceStatus = { chat_ready: boolean; image_ready: boolean; ai_is_simulated: false };
 type BrushPoint = { x: number; y: number };
@@ -64,8 +66,28 @@ async function readError(response: Response, fallback: string) {
   return body.detail || fallback;
 }
 
+async function prepareReferencePhoto(blob: Blob) {
+  const bitmap = await createImageBitmap(blob);
+  const scale = Math.min(1, 1024 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("No pude preparar la foto de referencia.");
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  const optimized = await new Promise<Blob>((resolve, reject) => canvas.toBlob(result => result ? resolve(result) : reject(new Error("No pude comprimir la foto de referencia.")), "image/jpeg", 0.82));
+  const encoded = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+    reader.onerror = () => reject(reader.error || new Error("No pude leer la foto de referencia."));
+    reader.readAsDataURL(optimized);
+  });
+  return { reference_image: encoded, reference_mime_type: "image/jpeg" };
+}
+
 export default function App() {
-  const [screen, setScreen] = useState<Screen>(() => window.location.hash.startsWith("#/taller") ? "workshop" : "home");
+  const [screen, setScreen] = useState<Screen>(() => window.location.hash.startsWith("#/taller") ? "workshop" : window.location.hash === "#/garaje" ? "garage" : "home");
   const [bikes, setBikes] = useState<Bike[]>(CATALOG);
   const [bike, setBike] = useState<Bike | null>(null);
   const [ownVehicleName, setOwnVehicleName] = useState("");
@@ -74,6 +96,10 @@ export default function App() {
   const [ownPhotoUrl, setOwnPhotoUrl] = useState("");
   const [versions, setVersions] = useState<Version[]>([]);
   const [at, setAt] = useState(0);
+  const [garageId, setGarageId] = useState<string | null>(null);
+  const [garageCreatedAt, setGarageCreatedAt] = useState<number | null>(null);
+  const [garageEntries, setGarageEntries] = useState<GarageEntry[]>([]);
+  const [garageError, setGarageError] = useState(false);
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [locale, setLocale] = useState<Locale>(() => {
     const saved = localStorage.getItem("motomod-locale");
@@ -123,7 +149,8 @@ export default function App() {
   useEffect(() => {
     const syncRoute = () => {
       const route = window.location.hash;
-      if (route === "#/taller") setScreen("workshop");
+      if (route === "#/garaje") setScreen("garage");
+      else if (route === "#/taller") setScreen("workshop");
       else if (route === "#/taller/estudio") setScreen(bike ? "studio" : "workshop");
       else setScreen("home");
     };
@@ -141,6 +168,27 @@ export default function App() {
     apiFetch("/api/auth/me").then(r => r.json()).then(d => setUser(d.user)).catch(() => undefined);
     apiFetch("/api/status").then(r => r.json()).then(setServiceStatus).catch(() => setServiceStatus({ chat_ready: false, image_ready: false, ai_is_simulated: false }));
   }, []);
+  useEffect(() => {
+    void listGarageEntries().then(setGarageEntries).catch(() => setGarageError(true));
+  }, []);
+  useEffect(() => {
+    if (!bike || !versions.length || !garageId) return;
+    const existing = garageEntries.find(entry => entry.id === garageId);
+    const unchanged = existing && existing.bikeId === bike.id && existing.bikeName === bike.name && existing.bikeType === bike.type && existing.versions.length === versions.length
+      && existing.versions.every((version, index) => version.id === versions[index]?.id);
+    if (unchanged) return;
+    const now = Date.now();
+    const entry: GarageEntry = {
+      id: garageId,
+      bikeId: bike.id,
+      bikeName: bike.name,
+      bikeType: bike.type,
+      createdAt: garageCreatedAt || now,
+      updatedAt: now,
+      versions: versions.map(version => ({ id: version.id, label: version.label, blob: version.blob })),
+    };
+    void saveGarageEntry(entry).then(() => listGarageEntries()).then(setGarageEntries).catch(() => setGarageError(true));
+  }, [bike, versions, garageId, garageCreatedAt, garageEntries]);
   useEffect(() => { chatEnd.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -179,6 +227,13 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function openGarage() {
+    setMobileMenu(false);
+    window.history.pushState({}, "", `${window.location.pathname}${window.location.search}#/garaje`);
+    setScreen("garage");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   function openStudioRoute() {
     window.history.pushState({}, "", `${window.location.pathname}${window.location.search}#/taller/estudio`);
     setScreen("studio");
@@ -195,7 +250,8 @@ export default function App() {
       const response = await fetch(`/samples/${sample.file}`);
       if (!response.ok) throw new Error(t("No pude cargar la foto de referencia. Inténtalo de nuevo."));
       const blob = await response.blob();
-      const version = { url: URL.createObjectURL(blob), blob, label: "Foto de muestra" };
+      const version = { id: crypto.randomUUID(), url: URL.createObjectURL(blob), blob, label: "Foto de muestra" };
+      setGarageId(crypto.randomUUID()); setGarageCreatedAt(Date.now());
       setBike(selectedBike); setVersions([version]); setAt(0); setStrokes([]);
       setSuggestions(pickIdeas(locale));
       setMsgs([{ role: "assistant", content: `${t("¡Listo! Cargué una foto de referencia de")} ${selectedBike.name}. ${t(sample.assistantNote)} ${t("Dime qué quieres personalizar.")}` }]);
@@ -211,7 +267,8 @@ export default function App() {
     if (name.length < 2) { setError(t("Escribe la marca o el modelo de tu moto.")); return; }
     if (!ownPhoto) { setError(t("Sube una foto de tu moto para empezar.")); return; }
     const selectedBike: Bike = { id: `propia-${Date.now()}`, name, type: ownVehicleType };
-    const version = { url: URL.createObjectURL(ownPhoto), blob: ownPhoto, label: "Mi foto" };
+    const version = { id: crypto.randomUUID(), url: URL.createObjectURL(ownPhoto), blob: ownPhoto, label: "Mi foto" };
+    setGarageId(crypto.randomUUID()); setGarageCreatedAt(Date.now());
     setBike(selectedBike); setVersions([version]); setAt(0); setStrokes([]);
     setSuggestions(pickIdeas(locale));
     setMsgs([{ role: "assistant", content: t("¡Listo! Ya tengo tu moto y tu foto. Cuéntame qué quieres personalizar.") }]);
@@ -221,7 +278,7 @@ export default function App() {
   function loadPhoto(file?: File) {
     if (!file) return;
     if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) { setError(t("Elige una imagen JPG, PNG o WebP.")); return; }
-    const version = { url: URL.createObjectURL(file), blob: file, label: "Mi foto" };
+    const version = { id: crypto.randomUUID(), url: URL.createObjectURL(file), blob: file, label: "Mi foto" };
     setVersions(v => [...v.slice(0, at + 1), version]); setAt(at + 1); setError(""); setPending(null); setStrokes([]);
     setSuggestions(pickIdeas(locale));
     setMsgs(m => [...m, { role: "assistant", content: t("Foto lista. Cuéntame qué te gustaría cambiar.") }]);
@@ -235,13 +292,13 @@ export default function App() {
   }
 
   async function send(content: string) {
-    if (!content.trim() || busy || !bike) return;
+    if (!content.trim() || busy || !bike || !current) return;
     const next = [...msgs, { role: "user" as const, content: content.trim() }];
     setMsgs(next); setText(""); setPending(null); setStrokes([]); setError(""); setBusy(t("Conectando con la IA…"));
     try {
       const response = await apiFetch("/api/chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: bike.name, messages: next.slice(1), language: locale }),
+        body: JSON.stringify({ model: bike.name, messages: next.slice(1), language: locale, ...await prepareReferencePhoto(current.blob) }),
       });
       if (!response.ok) throw new Error(t(await readError(response, "No pude conectar con Gemini.")));
       const data: { reply: string; edit: Edit | null } = await response.json();
@@ -326,7 +383,7 @@ export default function App() {
       const response = await apiFetch("/api/edit", { method: "POST", body: form });
       if (!response.ok) throw new Error(t(await readError(response, "No pude aplicar el cambio.")));
       const blob = await response.blob();
-      setVersions(v => [...v.slice(0, at + 1), { url: URL.createObjectURL(blob), blob, label: pending.part }]);
+      setVersions(v => [...v.slice(0, at + 1), { id: crypto.randomUUID(), url: URL.createObjectURL(blob), blob, label: pending.part }]);
       setAt(at + 1); setMsgs(m => [...m, { role: "assistant", content: `${t("Listo:")} ${pending.part} ${t("actualizado con Stability AI.")}` }]);
       setPending(null); setStrokes([]);
     } catch (err) { setError(err instanceof Error ? t(err.message) : t("Falló la edición. Inténtalo de nuevo.")); }
@@ -352,14 +409,55 @@ export default function App() {
     setUser(null); setAccountView(false);
   }
 
+  function openGarageEntry(entry: GarageEntry) {
+    setBike({ id: entry.bikeId || `garage-${entry.id}`, name: entry.bikeName, type: entry.bikeType });
+    setVersions(entry.versions.map(version => ({ ...version, id: version.id || crypto.randomUUID(), url: URL.createObjectURL(version.blob) })));
+    setAt(entry.versions.length - 1);
+    setGarageId(entry.id); setGarageCreatedAt(entry.createdAt);
+    setMsgs([{ role: "assistant", content: t("Proyecto cargado desde tu garaje.") }]);
+    setPending(null); setStrokes([]); setError(""); setCompare(false);
+    window.history.pushState({}, "", `${window.location.pathname}${window.location.search}#/taller/estudio`);
+    setScreen("studio");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function removeGarageEntry(entry: GarageEntry) {
+    if (!window.confirm(t("¿Eliminar esta moto y su historial guardado de este dispositivo?"))) return;
+    try {
+      await deleteGarageEntry(entry.id);
+      setGarageEntries(await listGarageEntries());
+      if (garageId === entry.id) setGarageId(null);
+      setGarageError(false);
+    } catch {
+      setGarageError(true);
+    }
+  }
+
   function goHome() {
     window.history.pushState({}, "", `${window.location.pathname}${window.location.search}`);
-    setScreen("home"); setBike(null); setVersions([]); setAt(0); setPending(null); setStrokes([]); setError(""); window.scrollTo({ top: 0, behavior: "smooth" });
+    setScreen("home"); setBike(null); setVersions([]); setAt(0); setGarageId(null); setGarageCreatedAt(null); setPending(null); setStrokes([]); setError(""); window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   return (
     <div className="site-shell">
-      {screen === "home" ? (
+      {screen === "garage" ? (
+        <main className="garage-page">
+          <header className="studio-header">
+            <button className="studio-back" onClick={goHome}><ArrowLeft size={17} /><span>{t("Volver a MotoMod")}</span></button>
+            <a className="brand studio-brand" href="#inicio" onClick={e => { e.preventDefault(); goHome(); }}><MotoMark /><span className="brand-word">MOTOMOD<small>{t("TALLER DIGITAL")}</small></span></a>
+            <div className="studio-menu"><PreferencesMenu locale={locale} setLocale={setLocale} t={t} theme={theme} setTheme={setTheme} largeText={largeText} setLargeText={setLargeText} highContrast={highContrast} setHighContrast={setHighContrast} reducedMotion={reducedMotion} setReducedMotion={setReducedMotion} /><button className="studio-account" onClick={openWorkshop}><ArrowRight size={16} />{t("Abrir taller")}</button></div>
+          </header>
+          <section className="garage-intro">
+            <div><div className="eyebrow dark"><span className="eyebrow-line" /> {t("TU ESPACIO PERSONAL")}</div><h1>{t("Mi garaje.")}</h1><p>{t("Tus motos, fotos originales y cambios guardados en este dispositivo.")}</p></div>
+            <button className="button-primary" onClick={openWorkshop}>{t("Añadir una moto")} <ArrowRight size={17} /></button>
+          </section>
+          {garageError && <div className="inline-warning" role="alert"><CircleHelp size={16} />{t("No se pudo acceder al garaje local. Comprueba el espacio disponible del navegador.")}</div>}
+          {garageEntries.length ? <section className="garage-grid" aria-label={t("Motos guardadas")}>
+            {garageEntries.map(entry => <GarageCard key={entry.id} entry={entry} locale={locale} t={t} onOpen={() => openGarageEntry(entry)} onDelete={() => void removeGarageEntry(entry)} />)}
+          </section> : <section className="garage-empty"><div className="garage-empty-icon"><FolderOpen size={28} /></div><h2>{t("Tu garaje está vacío")}</h2><p>{t("Empieza con una moto del catálogo o sube una foto. La guardaremos aquí junto a cada modificación.")}</p><button className="button-primary" onClick={openWorkshop}>{t("Probar una moto ahora")} <ArrowRight size={17} /></button></section>}
+          <p className="garage-local-note"><ShieldCheck size={15} />{t("El garaje se guarda en este navegador y dispositivo; no se sincroniza con la nube.")}</p>
+        </main>
+      ) : screen === "home" ? (
         <>
           <header className="site-nav">
             <a className="brand" href="#inicio" onClick={e => { e.preventDefault(); window.scrollTo({ top: 0, behavior: "smooth" }); }} aria-label={t("MotoMod, inicio")}>
@@ -369,6 +467,7 @@ export default function App() {
               <a href="#/taller" onClick={e => { e.preventDefault(); openWorkshop(); }}>{t("Taller virtual")}</a>
               <a href="#como-funciona" onClick={() => setMobileMenu(false)}>{t("Cómo funciona")}</a>
               <a href="#motos" onClick={() => setMobileMenu(false)}>{t("Explorar motos")}</a>
+              <a href="#/garaje" onClick={e => { e.preventDefault(); openGarage(); }}>{t("Mi garaje")}</a>
               <a href="#preguntas" onClick={() => setMobileMenu(false)}>{t("Preguntas")}</a>
             </nav>
             <div className="nav-actions">
@@ -398,7 +497,7 @@ export default function App() {
             </section>
 
             <section className="trust-strip" aria-label={t("Ventajas")}>
-              <div><ShieldCheck /><span><b>{t("Uso transparente de tu foto")}</b><small>{t("solo se envía al proveedor al editar")}</small></span></div>
+              <div><ShieldCheck /><span><b>{t("Uso transparente de tu foto")}</b><small>{t("Foto enviada a Gemini al chatear y Stability al editar")}</small></span></div>
               <div><Gauge /><span><b>{t("Empieza en segundos")}</b><small>{t("Sin formularios obligatorios")}</small></span></div>
               <div><Sparkles /><span><b>{t("Conectores de IA reales")}</b><small>{t("Sin respuestas pregrabadas")}</small></span></div>
               <div className="trust-last"><Moon /><span><b>{t("Sin registro obligatorio")}</b><small>{t("Entra directo al taller")}</small></span></div>
@@ -461,19 +560,19 @@ export default function App() {
               <div className="faq-list">
                 <details><summary>{t("¿Necesito crear una cuenta para probar?")} <ChevronDown size={18} /></summary><p>{t("No. Puedes elegir un modelo y comenzar en el momento. La cuenta es opcional y sirve para identificar tu sesión en este dispositivo.")}</p></details>
                 <details><summary>{t("¿Las modificaciones son imágenes reales?")} <ChevronDown size={18} /></summary><p>{t("El chat consulta Gemini y las modificaciones se generan con Stability AI. Tú pintas la zona que quieres cambiar y esa máscara guía el inpainting.")}</p></details>
-                <details><summary>{t("¿Puedo usar mi propia moto y mi foto?")} <ChevronDown size={18} /></summary><p>{t("Sí. Entra a “Taller virtual”, escribe el nombre de tu moto y sube una foto JPG, PNG o WebP. También puedes cambiar la foto dentro del taller. Una vista lateral bien iluminada ayuda a marcar las piezas. La foto se envía a Stability AI al generar el cambio; MotoMod no la publica ni la guarda en la cuenta.")}</p></details>
+                <details><summary>{t("¿Puedo usar mi propia moto y mi foto?")} <ChevronDown size={18} /></summary><p>{t("Sí. Entra a “Taller virtual”, escribe el nombre de tu moto y sube una foto JPG, PNG o WebP. También puedes cambiar la foto dentro del taller. Una vista lateral bien iluminada ayuda a marcar las piezas. La imagen se envía a Gemini para analizar la moto y a Stability AI al generar el cambio; MotoMod no la publica ni la guarda en tu cuenta. Si guardas el proyecto en Mi garaje, queda en este dispositivo.")}</p></details>
               </div>
             </section>
           </main>
 
-          <footer className="site-footer"><a className="brand footer-brand" href="#inicio"><MotoMark /><span className="brand-word">MOTOMOD<small>{t("TALLER DIGITAL")}</small></span></a><span>{t("Diseñado para imaginar lo que viene.")}</span><div><a href="#como-funciona">{t("Cómo funciona")}</a><button onClick={() => { setAuthMode("signup"); setAuthOpen(true); }}>{t("Crear cuenta")}</button><a href="#preguntas">{t("Ayuda")}</a></div><small>© 2026 MotoMod · {t("Proyecto académico")}</small></footer>
+          <footer className="site-footer"><a className="brand footer-brand" href="#inicio"><MotoMark /><span className="brand-word">MOTOMOD<small>{t("TALLER DIGITAL")}</small></span></a><span>{t("Diseñado para imaginar lo que viene.")}</span><div><button onClick={openGarage}>{t("Mi garaje")}</button><a href="#como-funciona">{t("Cómo funciona")}</a><button onClick={() => { setAuthMode("signup"); setAuthOpen(true); }}>{t("Crear cuenta")}</button><a href="#preguntas">{t("Ayuda")}</a></div><small>© 2026 MotoMod · {t("Proyecto académico")}</small></footer>
         </>
       ) : screen === "workshop" || !bike ? (
         <main className="workshop-page">
           <header className="studio-header workshop-header">
             <button className="studio-back" onClick={goHome}><ArrowLeft size={17} /><span>{t("Volver a MotoMod")}</span></button>
             <a className="brand studio-brand" href="#" onClick={e => { e.preventDefault(); goHome(); }}><MotoMark /><span className="brand-word">MOTOMOD<small>{t("TALLER DIGITAL")}</small></span></a>
-            <div className="studio-menu"><PreferencesMenu locale={locale} setLocale={setLocale} t={t} theme={theme} setTheme={setTheme} largeText={largeText} setLargeText={setLargeText} highContrast={highContrast} setHighContrast={setHighContrast} reducedMotion={reducedMotion} setReducedMotion={setReducedMotion} /><button className="studio-account" onClick={() => user ? setAccountView(true) : (setAuthMode("signup"), setAuthOpen(true))}>{user ? <UserRound size={16} /> : <LogIn size={16} />}{user ? t("Mi perfil") : t("Crear cuenta")}</button></div>
+            <div className="studio-menu"><PreferencesMenu locale={locale} setLocale={setLocale} t={t} theme={theme} setTheme={setTheme} largeText={largeText} setLargeText={setLargeText} highContrast={highContrast} setHighContrast={setHighContrast} reducedMotion={reducedMotion} setReducedMotion={setReducedMotion} /><button className="studio-account" onClick={openGarage}><FolderOpen size={16} />{t("Mi garaje")}</button><button className="studio-account" onClick={() => user ? setAccountView(true) : (setAuthMode("signup"), setAuthOpen(true))}>{user ? <UserRound size={16} /> : <LogIn size={16} />}{user ? t("Mi perfil") : t("Crear cuenta")}</button></div>
           </header>
           <section className="workshop-intro">
             <div className="eyebrow dark"><span className="eyebrow-line" /> {t("TALLER VIRTUAL · TU ESPACIO DE DISEÑO")}</div>
@@ -508,7 +607,7 @@ export default function App() {
               <button className={ownPhoto ? "photo-picker has-photo" : "photo-picker"} onClick={() => ownPhotoInput.current?.click()}><ImagePlus size={17} /><span><b>{ownPhoto ? ownPhoto.name : t("Sube una foto de tu moto")}</b><small>JPG, PNG {t("o")} WebP</small></span><ChevronRight size={17} /></button>
               {ownPhoto && ownPhotoUrl && <div className="own-photo-preview"><img src={ownPhotoUrl} alt={t("Vista previa de la foto seleccionada")} /><span>{t("Foto lista para el taller")}</span><button onClick={() => { selectOwnPhoto(); if (ownPhotoInput.current) ownPhotoInput.current.value = ""; }}>{t("Quitar")}</button></div>}
               <button className="button-primary own-bike-submit" onClick={startOwnVehicle} disabled={!ownVehicleName.trim() || !ownPhoto}>{t("Abrir mi taller")} <ArrowRight size={17} /></button>
-              <small className="photo-privacy"><ShieldCheck size={14} /> {t("La foto queda en esta sesión y se envía al proveedor de IA al solicitar una edición.")}</small>
+              <small className="photo-privacy"><ShieldCheck size={14} /> {t("La foto se envía a Gemini con cada mensaje como referencia; Stability AI la recibe al generar un cambio.")}</small>
             </section>
           </div>
         </main>
@@ -517,7 +616,7 @@ export default function App() {
           <header className="studio-header">
             <button className="studio-back" onClick={goHome}><ArrowLeft size={17} /><span>{t("Salir del taller")}</span></button>
             <a className="brand studio-brand" href="#inicio" onClick={e => { e.preventDefault(); goHome(); }}><MotoMark /><span className="brand-word">MOTOMOD<small>{t("TALLER DIGITAL")}</small></span></a>
-            <div className="studio-menu"><span className="studio-bike-name">{bike?.name}</span><PreferencesMenu locale={locale} setLocale={setLocale} t={t} theme={theme} setTheme={setTheme} largeText={largeText} setLargeText={setLargeText} highContrast={highContrast} setHighContrast={setHighContrast} reducedMotion={reducedMotion} setReducedMotion={setReducedMotion} /><button className="studio-account" onClick={() => user ? setAccountView(true) : (setAuthMode("signup"), setAuthOpen(true))}>{user ? <UserRound size={16} /> : <LogIn size={16} />}{user ? t("Mi perfil") : t("Crear cuenta")}</button></div>
+            <div className="studio-menu"><span className="studio-bike-name">{bike?.name}</span><PreferencesMenu locale={locale} setLocale={setLocale} t={t} theme={theme} setTheme={setTheme} largeText={largeText} setLargeText={setLargeText} highContrast={highContrast} setHighContrast={setHighContrast} reducedMotion={reducedMotion} setReducedMotion={setReducedMotion} /><button className="studio-account" onClick={openGarage}><FolderOpen size={16} />{t("Mi garaje")}</button><button className="studio-account" onClick={() => user ? setAccountView(true) : (setAuthMode("signup"), setAuthOpen(true))}>{user ? <UserRound size={16} /> : <LogIn size={16} />}{user ? t("Mi perfil") : t("Crear cuenta")}</button></div>
           </header>
           <div className="studio-layout">
             <section className="studio-workspace">
@@ -544,7 +643,7 @@ export default function App() {
                   {pending && <div className="selection-tools"><label htmlFor="brush-size">{t("Tamaño del pincel")} <b>{brushSize}px</b></label><input id="brush-size" type="range" min="18" max="90" value={brushSize} onChange={e => setBrushSize(Number(e.target.value))} aria-label={t("Tamaño del pincel de selección")} /><button onClick={() => setStrokes([])} disabled={!strokes.length || !!busy}>{t("Limpiar selección")}</button></div>}
                   {strokes.length > 0 && <div className="mask-confirm"><span><Check size={15} /> {t("Zona marcada")}</span><button onClick={() => setStrokes([])} disabled={!!busy}>{t("Empezar de nuevo")}</button><button className="confirm-button" onClick={applyEdit} disabled={!!busy}>{t("Aplicar cambio")} <ArrowRight size={15} /></button></div>}
                   <div className="version-strip" aria-label={t("Historial de imágenes")}>{versions.map((version, i) => <button key={`${version.label}-${i}`} className={i === at ? "version-card active" : "version-card"} disabled={!!busy} onClick={() => { setAt(i); setPending(null); }}><img src={version.url} alt="" /><span><b>{t(version.label)}</b><small>{i === 0 ? t("Original") : `${t("Versión ")}${i + 1}`}</small></span></button>)}</div>
-                  <div className="canvas-footnote"><span><ShieldCheck size={14} />{t("Foto enviada a Stability AI al editar")}</span><span>{t(current.label === "Foto de muestra" ? currentSample?.studioNote || "Foto de muestra" : current.label === "Mi foto" ? "Foto original de tu vehículo" : "Versión editada")}</span></div>
+                  <div className="canvas-footnote"><span><ShieldCheck size={14} />{t("Gemini analiza la foto; Stability AI la recibe al editar")}</span><span>{t(current.label === "Foto de muestra" ? currentSample?.studioNote || "Foto de muestra" : current.label === "Mi foto" ? "Foto original de tu vehículo" : "Versión editada")}</span></div>
                 </>}
               </div>
             </section>
@@ -597,6 +696,31 @@ export default function App() {
 }
 
 function ArrowUpRightIcon() { return <ArrowRight size={15} className="arrow-up-right" aria-hidden="true" />; }
+
+function GarageCard({ entry, locale, t, onOpen, onDelete }: { entry: GarageEntry; locale: Locale; t: (key: string) => string; onOpen: () => void; onDelete: () => void }) {
+  const [previewUrl, setPreviewUrl] = useState("");
+  const latest = entry.versions[entry.versions.length - 1];
+  useEffect(() => {
+    if (!latest) return;
+    const url = URL.createObjectURL(latest.blob);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [latest]);
+  const changes = entry.versions.slice(1).map(version => version.label);
+  const modifiedAt = new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(entry.updatedAt);
+  return <article className="garage-card">
+    <button className="garage-card-preview" onClick={onOpen} aria-label={`${t("Abrir proyecto de")} ${entry.bikeName}`}>
+      {previewUrl && <img src={previewUrl} alt={`${entry.bikeName} · ${t("última modificación")}`} />}
+      <span>{changes.length ? t("ÚLTIMA MODIFICACIÓN") : t("FOTO ORIGINAL")}</span>
+    </button>
+    <div className="garage-card-content">
+      <div className="garage-card-heading"><div><small>{t(entry.bikeType).toUpperCase()}</small><h2>{entry.bikeName}</h2></div><button className="garage-delete" onClick={onDelete} aria-label={`${t("Eliminar proyecto de")} ${entry.bikeName}`} title={t("Eliminar del garaje")}><Trash2 size={17} /></button></div>
+      <p className="garage-card-date">{t("Último cambio")}: {modifiedAt}</p>
+      <div className="garage-changes"><b>{t("MODIFICACIONES")} · {changes.length}</b>{changes.length ? <ul>{changes.map((change, index) => <li key={`${index}-${change}`}>{t(change)}</li>)}</ul> : <span>{t("Aún no tiene cambios guardados.")}</span>}</div>
+      <button className="garage-open-button" onClick={onOpen}>{t("Continuar editando")} <ArrowRight size={16} /></button>
+    </div>
+  </article>;
+}
 
 type PreferencesMenuProps = {
   locale: Locale;

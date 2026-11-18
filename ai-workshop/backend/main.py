@@ -1,4 +1,4 @@
-import hashlib, io, json, os, re, secrets, sqlite3
+import base64, binascii, hashlib, io, json, os, re, secrets, sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from contextlib import contextmanager
@@ -47,7 +47,8 @@ CATALOG = [
 ]
 
 SYSTEM = """Eres el asistente de un simulador de modificaciones de motos. Habla en {language}, breve y amable.
-La moto del usuario es: {model}. Si no ha dicho qué quiere cambiar, pregúntalo y sugiere ideas (rines, escape, tanque, manillar, farola, asiento, color).
+La moto del usuario es: {model}. Usa la foto de referencia adjunta como fuente visual principal: identifica la configuración visible y propone cambios compatibles con esa moto. No supongas piezas o rasgos que no se vean. Si no puedes confirmar compatibilidad mecánica, aclara que es una propuesta visual.
+Si no ha dicho qué quiere cambiar, pregúntalo y sugiere ideas (rines, escape, tanque, manillar, farola, asiento, color) que encajen con la foto y el modelo.
 Cuando tengas UN cambio concreto, devuélvelo. Máximo un cambio por turno.
 Responde SIEMPRE y SOLO con JSON: {"reply": "texto para el usuario en {language}", "edit": null o {"part": "nombre corto de la pieza en {language}", "prompt": "descripción en inglés de cómo debe verse la pieza nueva"}}.
 Si hay edit, en reply pídele que pinte esa pieza en la foto para delimitar el área del cambio."""
@@ -59,6 +60,8 @@ class Chat(BaseModel):
     model: str
     messages: list[dict]
     language: str = "es"
+    reference_image: str | None = None
+    reference_mime_type: str = "image/jpeg"
 
 
 class AccountInput(BaseModel):
@@ -266,15 +269,26 @@ def chat(body: Chat):
             normalized.pop(0)
         if not normalized:
             raise HTTPException(422, "Escribe una idea antes de consultar al copiloto.")
+        contents = [
+            {"role": item["role"], "parts": [{"text": item["content"]}]}
+            for item in normalized
+        ]
+        if body.reference_image:
+            if body.reference_mime_type not in ("image/jpeg", "image/png", "image/webp") or len(body.reference_image) > 2_000_000:
+                raise HTTPException(413, "La foto de referencia debe ser JPG, PNG o WebP y pesar menos de 1.5 MB tras optimizarla.")
+            try:
+                image_data = base64.b64decode(body.reference_image, validate=True)
+            except (binascii.Error, ValueError) as exc:
+                raise HTTPException(422, "No pude leer la foto de referencia. Vuelve a subirla.") from exc
+            last_user = next((item for item in reversed(contents) if item["role"] == "user"), None)
+            if last_user:
+                last_user["parts"].append({"inlineData": {"mimeType": body.reference_mime_type, "data": body.reference_image}})
         response = httpx.post(
             f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent",
             headers={"x-goog-api-key": api_key},
             json={
                 "systemInstruction": {"parts": [{"text": SYSTEM.replace("{model}", body.model).replace("{language}", CHAT_LANGUAGES.get(body.language, "español"))}]},
-                "contents": [
-                    {"role": item["role"], "parts": [{"text": item["content"]}]}
-                    for item in normalized
-                ],
+                "contents": contents,
                 "generationConfig": {"maxOutputTokens": 500},
             },
             timeout=httpx.Timeout(90, connect=15),
@@ -357,7 +371,8 @@ def edit(
             },
             data={
                 "prompt": (
-                    f"Photorealistic product photo of the same {model} motorcycle. Change only the selected "
+                    f"Photorealistically edit the uploaded motorcycle photo as the exact visual reference. Keep the same {model} motorcycle, "
+                    f"including its visible design, proportions, frame, and identifying details. Change only the selected "
                     f"area, which is the {target}: {prompt}. Preserve the original camera angle, lighting, "
                     "shadows, background, motorcycle geometry, and every unselected part. Make the replacement "
                     "mechanically plausible and naturally integrated."
