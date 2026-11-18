@@ -11,7 +11,7 @@ type Msg = { role: "user" | "assistant"; content: string };
 type Edit = { part: string; prompt: string };
 type Version = { url: string; blob: Blob; label: string };
 type User = { id: number; name: string; email: string };
-type Screen = "home" | "studio";
+type Screen = "home" | "workshop" | "studio";
 type AuthMode = "login" | "signup";
 type ServiceStatus = { chat_ready: boolean; image_ready: boolean; ai_is_simulated: false };
 type BrushPoint = { x: number; y: number };
@@ -64,9 +64,13 @@ async function readError(response: Response, fallback: string) {
 }
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>("home");
+  const [screen, setScreen] = useState<Screen>(() => window.location.hash.startsWith("#/taller") ? "workshop" : "home");
   const [bikes, setBikes] = useState<Bike[]>(CATALOG);
   const [bike, setBike] = useState<Bike | null>(null);
+  const [ownVehicleName, setOwnVehicleName] = useState("");
+  const [ownVehicleType, setOwnVehicleType] = useState("Otra");
+  const [ownPhoto, setOwnPhoto] = useState<File | null>(null);
+  const [ownPhotoUrl, setOwnPhotoUrl] = useState("");
   const [versions, setVersions] = useState<Version[]>([]);
   const [at, setAt] = useState(0);
   const [msgs, setMsgs] = useState<Msg[]>([]);
@@ -99,12 +103,29 @@ export default function App() {
   const chatEnd = useRef<HTMLDivElement>(null);
   const canvasImage = useRef<HTMLImageElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const ownPhotoInput = useRef<HTMLInputElement>(null);
   const accountModal = useRef<HTMLElement>(null);
   const filteredBikes = bikes.filter(b => filter === "Todas" || b.type === filter);
   const currentSample = bike ? SAMPLE[bike.id] : undefined;
   const current = versions[at];
 
   useEffect(() => { setStrokes([]); setPainting(false); setImageDimensions(null); }, [current?.url]);
+  useEffect(() => () => { if (ownPhotoUrl) URL.revokeObjectURL(ownPhotoUrl); }, [ownPhotoUrl]);
+
+  useEffect(() => {
+    const syncRoute = () => {
+      const route = window.location.hash;
+      if (route === "#/taller") setScreen("workshop");
+      else if (route === "#/taller/estudio") setScreen(bike ? "studio" : "workshop");
+      else setScreen("home");
+    };
+    window.addEventListener("popstate", syncRoute);
+    window.addEventListener("hashchange", syncRoute);
+    return () => {
+      window.removeEventListener("popstate", syncRoute);
+      window.removeEventListener("hashchange", syncRoute);
+    };
+  }, [bike]);
 
   useEffect(() => {
     apiFetch("/api/catalog").then(r => { if (!r.ok) throw new Error(); return r.json(); })
@@ -140,9 +161,18 @@ export default function App() {
     return () => window.removeEventListener("keydown", modalKeys);
   }, [authOpen, accountView]);
 
-  function goToModels() {
+  function openWorkshop() {
     setMobileMenu(false);
-    document.getElementById("motos")?.scrollIntoView({ behavior: "smooth" });
+    setError("");
+    window.history.pushState({}, "", `${window.location.pathname}${window.location.search}#/taller`);
+    setScreen("workshop");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function openStudioRoute() {
+    window.history.pushState({}, "", `${window.location.pathname}${window.location.search}#/taller/estudio`);
+    setScreen("studio");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function startSample(selectedBike: Bike) {
@@ -151,22 +181,47 @@ export default function App() {
       setCatalogError(`Todavía no hay una foto de referencia para ${selectedBike.name}.`);
       return;
     }
-    const response = await fetch(`/samples/${sample.file}`);
-    const blob = await response.blob();
-    const version = { url: URL.createObjectURL(blob), blob, label: "Foto de muestra" };
-    setBike(selectedBike); setVersions([version]); setAt(0); setScreen("studio"); setStrokes([]);
+    try {
+      const response = await fetch(`/samples/${sample.file}`);
+      if (!response.ok) throw new Error("No pude cargar la foto de referencia. Inténtalo de nuevo.");
+      const blob = await response.blob();
+      const version = { url: URL.createObjectURL(blob), blob, label: "Foto de muestra" };
+      setBike(selectedBike); setVersions([version]); setAt(0); setStrokes([]);
+      setSuggestions(pickIdeas());
+      setMsgs([{ role: "assistant", content: `¡Listo! Cargué una foto de referencia de ${selectedBike.name}. ${sample.assistantNote} Dime qué quieres personalizar.` }]);
+      setPending(null); setError(""); setCompare(false); openStudioRoute();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No pude cargar la foto de referencia.");
+      setScreen("workshop");
+    }
+  }
+
+  function startOwnVehicle() {
+    const name = ownVehicleName.trim();
+    if (name.length < 2) { setError("Escribe la marca o el modelo de tu moto."); return; }
+    if (!ownPhoto) { setError("Sube una foto de tu moto para empezar."); return; }
+    const selectedBike: Bike = { id: `propia-${Date.now()}`, name, type: ownVehicleType };
+    const version = { url: URL.createObjectURL(ownPhoto), blob: ownPhoto, label: "Mi foto" };
+    setBike(selectedBike); setVersions([version]); setAt(0); setStrokes([]);
     setSuggestions(pickIdeas());
-    setMsgs([{ role: "assistant", content: `¡Listo! Cargué una foto de referencia de ${selectedBike.name}. ${sample.assistantNote} Dime qué quieres personalizar.` }]);
-    setPending(null); setError(""); setCompare(false); window.scrollTo({ top: 0, behavior: "smooth" });
+    setMsgs([{ role: "assistant", content: "¡Listo! Ya tengo tu moto y tu foto. Cuéntame qué quieres personalizar." }]);
+    setPending(null); setError(""); setCompare(false); openStudioRoute();
   }
 
   function loadPhoto(file?: File) {
     if (!file) return;
-    if (!file.type.startsWith("image/")) { setError("Elige una imagen JPG, PNG o WebP."); return; }
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) { setError("Elige una imagen JPG, PNG o WebP."); return; }
     const version = { url: URL.createObjectURL(file), blob: file, label: "Mi foto" };
     setVersions(v => [...v.slice(0, at + 1), version]); setAt(at + 1); setError(""); setPending(null); setStrokes([]);
     setSuggestions(pickIdeas());
     setMsgs(m => [...m, { role: "assistant", content: "Foto lista. Cuéntame qué te gustaría cambiar." }]);
+  }
+
+  function selectOwnPhoto(file?: File) {
+    if (file && !["image/jpeg", "image/png", "image/webp"].includes(file.type)) { setError("Elige una imagen JPG, PNG o WebP."); return; }
+    setOwnPhoto(file || null);
+    setOwnPhotoUrl(file ? URL.createObjectURL(file) : "");
+    setError("");
   }
 
   async function send(content: string) {
@@ -288,6 +343,7 @@ export default function App() {
   }
 
   function goHome() {
+    window.history.pushState({}, "", `${window.location.pathname}${window.location.search}`);
     setScreen("home"); setBike(null); setVersions([]); setAt(0); setPending(null); setStrokes([]); setError(""); window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -300,6 +356,7 @@ export default function App() {
               <MotoMark /><span className="brand-word">MOTOMOD<small>TALLER DIGITAL</small></span>
             </a>
             <nav className={mobileMenu ? "nav-links open" : "nav-links"} aria-label="Navegación principal">
+              <a href="#/taller" onClick={e => { e.preventDefault(); openWorkshop(); }}>Taller virtual</a>
               <a href="#como-funciona" onClick={() => setMobileMenu(false)}>Cómo funciona</a>
               <a href="#motos" onClick={() => setMobileMenu(false)}>Explorar motos</a>
               <a href="#preguntas" onClick={() => setMobileMenu(false)}>Preguntas</a>
@@ -308,7 +365,7 @@ export default function App() {
               {user ? <button className="nav-account" onClick={() => setAccountView(true)}><UserRound size={16} />{user.name.split(" ")[0]}</button>
                 : <button className="nav-login" onClick={() => { setAuthMode("login"); setAuthOpen(true); }}>Iniciar sesión</button>}
               <PreferencesMenu theme={theme} setTheme={setTheme} largeText={largeText} setLargeText={setLargeText} highContrast={highContrast} setHighContrast={setHighContrast} reducedMotion={reducedMotion} setReducedMotion={setReducedMotion} />
-              <button className="nav-cta" onClick={goToModels}>Probar ahora <ArrowRight size={16} /></button>
+              <button className="nav-cta" onClick={openWorkshop}>Abrir taller <ArrowRight size={16} /></button>
             </div>
             <button className="menu-toggle" onClick={() => setMobileMenu(v => !v)} aria-label={mobileMenu ? "Cerrar menú" : "Abrir menú"}>{mobileMenu ? <X /> : <Menu />}</button>
           </header>
@@ -321,7 +378,7 @@ export default function App() {
                 <h1>La próxima versión<br />de tu moto <em>empieza aquí.</em></h1>
                 <p>Visualiza tus ideas antes de llevarlas al taller. Elige una moto de muestra o sube una foto y modifica cada detalle con IA.</p>
                 <div className="hero-actions">
-                  <button className="button-primary" onClick={goToModels}>Elegir una moto <ArrowRight size={18} /></button>
+                  <button className="button-primary" onClick={openWorkshop}>Entrar al taller <ArrowRight size={18} /></button>
                   <a href="#como-funciona" className="hero-secondary">Descubre cómo funciona <ArrowDown size={16} /></a>
                 </div>
                 <div className="hero-proof"><div className="proof-dot"><Sparkles size={14} /></div><span><b>Ediciones con IA real</b><br />Tu foto, transformada por ti.</span></div>
@@ -377,7 +434,7 @@ export default function App() {
                   <div className="step"><span className="step-number">02</span><div><h3>Cuéntale a Gemini</h3><p>Describe tu idea con tus palabras. La IA concreta la pieza y el estilo.</p></div></div>
                   <div className="step"><span className="step-number">03</span><div><h3>Pinta y transforma</h3><p>Marca la zona de la pieza y aplica una edición real con Stability AI.</p></div></div>
                 </div>
-                <button className="text-link" onClick={goToModels}>Empezar a explorar <ArrowRight size={16} /></button>
+                <button className="text-link" onClick={openWorkshop}>Empezar a explorar <ArrowRight size={16} /></button>
               </div>
             </section>
 
@@ -385,7 +442,7 @@ export default function App() {
               <div className="cta-glow" /><div className="eyebrow"><span className="eyebrow-line" /> GARAGE ABIERTO</div>
               <h2>Tu idea merece<br />verse <em>en grande.</em></h2>
               <p>No necesitas cuenta para probar. Solo una idea y ganas de experimentar.</p>
-              <button className="button-primary" onClick={goToModels}>Entrar al taller <ArrowRight size={18} /></button>
+              <button className="button-primary" onClick={openWorkshop}>Entrar al taller <ArrowRight size={18} /></button>
               <div className="cta-stamp">M<br /><span>·</span></div>
             </section>
 
@@ -394,13 +451,57 @@ export default function App() {
               <div className="faq-list">
                 <details><summary>¿Necesito crear una cuenta para probar? <ChevronDown size={18} /></summary><p>No. Puedes elegir un modelo y comenzar en el momento. La cuenta es opcional y sirve para identificar tu sesión en este dispositivo.</p></details>
                 <details><summary>¿Las modificaciones son imágenes reales? <ChevronDown size={18} /></summary><p>El chat consulta Gemini y las modificaciones se generan con Stability AI. Tú pintas la zona que quieres cambiar y esa máscara guía el inpainting.</p></details>
-                <details><summary>¿Puedo usar la foto de mi moto? <ChevronDown size={18} /></summary><p>Sí. Entra con cualquier moto de muestra y usa “Subir mi foto” en el taller. Una vista lateral bien iluminada ayuda a marcar las piezas. La foto se envía a Stability AI para generar el cambio; MotoMod no la publica ni la guarda en la cuenta.</p></details>
+                <details><summary>¿Puedo usar mi propia moto y mi foto? <ChevronDown size={18} /></summary><p>Sí. Entra a “Taller virtual”, escribe el nombre de tu moto y sube una foto JPG, PNG o WebP. También puedes cambiar la foto dentro del taller. Una vista lateral bien iluminada ayuda a marcar las piezas. La foto se envía a Stability AI al generar el cambio; MotoMod no la publica ni la guarda en la cuenta.</p></details>
               </div>
             </section>
           </main>
 
           <footer className="site-footer"><a className="brand footer-brand" href="#inicio"><MotoMark /><span className="brand-word">MOTOMOD<small>TALLER DIGITAL</small></span></a><span>Diseñado para imaginar lo que viene.</span><div><a href="#como-funciona">Cómo funciona</a><button onClick={() => { setAuthMode("signup"); setAuthOpen(true); }}>Crear cuenta</button><a href="#preguntas">Ayuda</a></div><small>© 2026 MotoMod · Proyecto académico</small></footer>
         </>
+      ) : screen === "workshop" || !bike ? (
+        <main className="workshop-page">
+          <header className="studio-header workshop-header">
+            <button className="studio-back" onClick={goHome}><ArrowLeft size={17} /><span>Volver a MotoMod</span></button>
+            <a className="brand studio-brand" href="#" onClick={e => { e.preventDefault(); goHome(); }}><MotoMark /><span className="brand-word">MOTOMOD<small>TALLER DIGITAL</small></span></a>
+            <div className="studio-menu"><PreferencesMenu theme={theme} setTheme={setTheme} largeText={largeText} setLargeText={setLargeText} highContrast={highContrast} setHighContrast={setHighContrast} reducedMotion={reducedMotion} setReducedMotion={setReducedMotion} /><button className="studio-account" onClick={() => user ? setAccountView(true) : (setAuthMode("signup"), setAuthOpen(true))}>{user ? <UserRound size={16} /> : <LogIn size={16} />}{user ? "Mi perfil" : "Crear cuenta"}</button></div>
+          </header>
+          <section className="workshop-intro">
+            <div className="eyebrow dark"><span className="eyebrow-line" /> TALLER VIRTUAL · TU ESPACIO DE DISEÑO</div>
+            <h1>Empieza con <em>tu moto.</em></h1>
+            <p>Elige una referencia del catálogo o sube una foto de cualquier vehículo. La experiencia de edición comienza en la siguiente pantalla.</p>
+          </section>
+          {error && <div className="inline-warning workshop-warning" role="alert"><CircleHelp size={16} />{error}</div>}
+          <div className="workshop-choices">
+            <section className="workshop-samples">
+              <div className="workshop-heading"><div className="eyebrow dark"><span className="eyebrow-line" /> OPCIÓN 01</div><h2>Usa una referencia</h2><p>Escoge una de las motos disponibles para iniciar con una foto de muestra.</p></div>
+              <div className="workshop-bike-grid">
+                {bikes.map(item => {
+                  const sample = SAMPLE[item.id];
+                  if (!sample) return null;
+                  return <button className="workshop-bike" key={item.id} onClick={() => void startSample(item)}>
+                    <span className="workshop-bike-image" style={{ backgroundImage: `url(/samples/${sample.file})` }} />
+                    <span className="workshop-bike-copy"><small>{item.type.toUpperCase()} · REFERENCIA</small><b>{item.name}</b></span>
+                    <ArrowRight size={17} />
+                  </button>;
+                })}
+              </div>
+              <p className="workshop-note"><CircleHelp size={15} /> Las fotos representan una categoría, no siempre el año o color exacto. Puedes reemplazar la imagen en el taller.</p>
+            </section>
+            <section className="custom-bike-card">
+              <div className="eyebrow dark"><span className="eyebrow-line" /> OPCIÓN 02 · TU VEHÍCULO</div>
+              <div className="custom-bike-icon"><ImagePlus size={22} /></div>
+              <h2>Trae tu propia moto.</h2>
+              <p>Escribe cómo la identificas y sube una foto para personalizar exactamente tu vehículo.</p>
+              <label className="workshop-field">Marca y modelo<input value={ownVehicleName} onChange={e => setOwnVehicleName(e.target.value)} placeholder="Ej. Honda CB190R" maxLength={80} /></label>
+              <label className="workshop-field">Estilo<select value={ownVehicleType} onChange={e => setOwnVehicleType(e.target.value)}><option>Otra</option><option>Deportiva</option><option>Naked</option><option>Clásica</option><option>Adventure</option><option>Scooter</option><option>Custom</option></select></label>
+              <input ref={ownPhotoInput} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={e => selectOwnPhoto(e.target.files?.[0])} />
+              <button className={ownPhoto ? "photo-picker has-photo" : "photo-picker"} onClick={() => ownPhotoInput.current?.click()}><ImagePlus size={17} /><span><b>{ownPhoto ? ownPhoto.name : "Sube una foto de tu moto"}</b><small>JPG, PNG o WebP</small></span><ChevronRight size={17} /></button>
+              {ownPhoto && ownPhotoUrl && <div className="own-photo-preview"><img src={ownPhotoUrl} alt="Vista previa de la foto seleccionada" /><span>Foto lista para el taller</span><button onClick={() => { selectOwnPhoto(); if (ownPhotoInput.current) ownPhotoInput.current.value = ""; }}>Quitar</button></div>}
+              <button className="button-primary own-bike-submit" onClick={startOwnVehicle} disabled={!ownVehicleName.trim() || !ownPhoto}>Abrir mi taller <ArrowRight size={17} /></button>
+              <small className="photo-privacy"><ShieldCheck size={14} /> La foto queda en esta sesión y se envía al proveedor de IA al solicitar una edición.</small>
+            </section>
+          </div>
+        </main>
       ) : (
         <main className="studio-page">
           <header className="studio-header">
@@ -433,7 +534,7 @@ export default function App() {
                   {pending && <div className="selection-tools"><label htmlFor="brush-size">Tamaño del pincel <b>{brushSize}px</b></label><input id="brush-size" type="range" min="18" max="90" value={brushSize} onChange={e => setBrushSize(Number(e.target.value))} aria-label="Tamaño del pincel de selección" /><button onClick={() => setStrokes([])} disabled={!strokes.length || !!busy}>Limpiar selección</button></div>}
                   {strokes.length > 0 && <div className="mask-confirm"><span><Check size={15} /> Zona marcada</span><button onClick={() => setStrokes([])} disabled={!!busy}>Empezar de nuevo</button><button className="confirm-button" onClick={applyEdit} disabled={!!busy}>Aplicar cambio <ArrowRight size={15} /></button></div>}
                   <div className="version-strip" aria-label="Historial de imágenes">{versions.map((version, i) => <button key={`${version.label}-${i}`} className={i === at ? "version-card active" : "version-card"} disabled={!!busy} onClick={() => { setAt(i); setPending(null); }}><img src={version.url} alt="" /><span><b>{version.label}</b><small>{i === 0 ? "Original" : `Versión ${i + 1}`}</small></span></button>)}</div>
-                  <div className="canvas-footnote"><span><ShieldCheck size={14} />Foto enviada a Stability AI al editar</span><span>{current.label === "Foto de muestra" ? currentSample?.studioNote : "Procesada para esta edición"}</span></div>
+                  <div className="canvas-footnote"><span><ShieldCheck size={14} />Foto enviada a Stability AI al editar</span><span>{current.label === "Foto de muestra" ? currentSample?.studioNote : current.label === "Mi foto" ? "Foto original de tu vehículo" : "Versión editada"}</span></div>
                 </>}
               </div>
             </section>
@@ -453,7 +554,7 @@ export default function App() {
               <div className="chat-compose"><textarea value={text} rows={2} disabled={!!busy} placeholder="Describe tu idea…" aria-label="Describe la modificación" onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(text); } }} /><button className="send-button" onClick={() => void send(text)} disabled={!!busy || !text.trim()} aria-label="Enviar mensaje"><ArrowRight size={18} /></button><small>Enter para enviar · Shift + Enter para una nueva línea</small></div>
             </aside>
           </div>
-          <div className="studio-bottom-bar"><span><Sparkles size={14} /> Tu imaginación conduce.</span><button onClick={() => fileInput.current?.click()}><ImagePlus size={15} />Subir mi foto</button><input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={e => loadPhoto(e.target.files?.[0])} /><button onClick={goHome}>Cambiar de moto <ChevronRight size={15} /></button></div>
+          <div className="studio-bottom-bar"><span><Sparkles size={14} /> Tu imaginación conduce.</span><button onClick={() => fileInput.current?.click()}><ImagePlus size={15} />Subir mi foto</button><input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={e => loadPhoto(e.target.files?.[0])} /><button onClick={openWorkshop}>Cambiar de moto <ChevronRight size={15} /></button></div>
         </main>
       )}
 

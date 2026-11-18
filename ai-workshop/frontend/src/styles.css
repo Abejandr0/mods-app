@@ -196,6 +196,54 @@ button:disabled { opacity: .45; cursor: not-allowed !important; }
 .site-footer a:hover, .site-footer button:hover { color: #a9341c; }
 .site-footer > small { color: #767a74; font-size: .63rem; white-space: nowrap; }
 
+/* Dedicated entry point for the workshop and custom vehicle uploads. */
+.workshop-page { min-height: 100svh; background: var(--paper); color: var(--ink); }
+.workshop-intro { max-width: 1500px; margin: auto; padding: clamp(38px, 5vw, 72px) clamp(20px, 6vw, 92px) 34px; }
+.workshop-intro h1 { margin: 16px 0 9px; font: 800 clamp(3.1rem, 7vw, 6.4rem)/.88 var(--display); letter-spacing: -.035em; text-transform: uppercase; }
+.workshop-intro h1 em { color: var(--orange); font-style: normal; }
+.workshop-intro > p { max-width: 670px; margin: 0; color: var(--muted); font-size: .94rem; }
+.workshop-warning { margin: 0 auto 22px; width: calc(100% - clamp(40px, 12vw, 184px)); }
+.workshop-choices { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(330px, .85fr); align-items: start; gap: clamp(22px, 4vw, 56px); max-width: 1500px; margin: auto; padding: 0 clamp(20px, 6vw, 92px) 70px; }
+.workshop-samples { min-width: 0; }
+.workshop-heading { margin-bottom: 17px; }
+.workshop-heading h2, .custom-bike-card h2 { margin: 8px 0 5px; font: 800 clamp(1.8rem, 3vw, 2.55rem)/.95 var(--display); text-transform: uppercase; }
+.workshop-heading p, .custom-bike-card > p { margin: 0; color: var(--muted); font-size: .76rem; line-height: 1.5; }
+.workshop-bike-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.workshop-bike { min-width: 0; display: flex; align-items: center; gap: 10px; padding: 8px; border: 1px solid #a4a69d; border-radius: 0; background: var(--paper-light); color: var(--ink); text-align: left; cursor: pointer; transition: transform .15s, border-color .15s, box-shadow .15s; }
+.workshop-bike:hover { transform: translate(-2px, -2px); border-color: var(--ink); box-shadow: 3px 3px 0 var(--orange); }
+.workshop-bike-image { width: 72px; height: 58px; flex: none; background-color: #333; background-position: center; background-size: cover; }
+.workshop-bike-copy { min-width: 0; flex: 1; }
+.workshop-bike-copy small, .workshop-bike-copy b { display: block; }
+.workshop-bike-copy small { color: var(--muted); font-size: .48rem; font-weight: 800; letter-spacing: .1em; }
+.workshop-bike-copy b { margin-top: 3px; font-size: .72rem; line-height: 1.2; }
+.workshop-bike > svg { flex: none; color: var(--orange); }
+.workshop-note { display: flex; align-items: flex-start; gap: 7px; margin: 15px 0 0; color: var(--muted); font-size: .65rem; line-height: 1.45; }
+.workshop-note svg { flex: none; }
+.custom-bike-card { position: relative; padding: clamp(20px, 3vw, 34px); border: 2px solid var(--ink); border-top: 8px solid var(--orange); background: var(--paper-light); box-shadow: 6px 6px 0 var(--ink); }
+.custom-bike-icon { width: 44px; height: 44px; display: grid; place-items: center; margin-top: 23px; border: 2px solid var(--ink); background: var(--orange-pale); }
+.custom-bike-card h2 { margin-top: 13px; }
+.custom-bike-card > p { max-width: 410px; margin-bottom: 19px; }
+.workshop-field { display: grid; gap: 5px; margin: 12px 0; color: var(--ink); font-size: .68rem; font-weight: 800; }
+.workshop-field input, .workshop-field select { width: 100%; min-height: 43px; padding: 9px 11px; border: 1px solid #92958e; border-radius: 0; background: var(--paper); color: var(--ink); font-size: .78rem; }
+.workshop-field input::placeholder { color: #90948d; }
+.photo-picker { width: 100%; min-height: 60px; display: flex; align-items: center; gap: 10px; margin-top: 15px; padding: 9px 11px; border: 1px dashed #73776f; border-radius: 0; background: var(--paper); color: var(--ink); text-align: left; cursor: pointer; }
+.photo-picker > svg:first-child { flex: none; color: #a33d24; }
+.photo-picker > span { min-width: 0; flex: 1; }
+.photo-picker b, .photo-picker small { display: block; }
+.photo-picker b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .72rem; }
+.photo-picker small { margin-top: 2px; color: var(--muted); font-size: .6rem; }
+.photo-picker > svg:last-child { flex: none; color: var(--muted); }
+.photo-picker:hover, .photo-picker.has-photo { border-color: var(--ink); background: var(--orange-pale); }
+.own-photo-preview { display: flex; align-items: center; gap: 9px; margin-top: 9px; padding: 7px; border: 1px solid #b0b2aa; font-size: .64rem; }
+.own-photo-preview img { width: 68px; height: 48px; flex: none; object-fit: cover; background: #d6d7d1; }
+.own-photo-preview span { flex: 1; color: var(--muted); }
+.own-photo-preview button { border: 0; border-bottom: 1px solid var(--muted); background: transparent; color: var(--ink); font-size: .62rem; cursor: pointer; }
+.own-bike-submit { width: 100%; margin-top: 15px; }
+.own-bike-submit:disabled { opacity: .5; cursor: not-allowed; }
+.photo-privacy { display: flex; align-items: flex-start; gap: 6px; margin-top: 12px; color: var(--muted); font-size: .6rem; line-height: 1.4; }
+.photo-privacy svg { flex: none; color: #4e7250; }
+.visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important; }
+
 /* Studio: tool-first layout with a focused image stage. */
 .studio-page { min-height: 100svh; display: flex; flex-direction: column; background: var(--paper); }
 .studio-header { height: 68px; flex: none; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 15px; padding: 0 clamp(14px, 2.7vw, 40px); color: var(--paper-light); background: var(--ink); border-bottom: 3px solid var(--orange); }
@@ -210,6 +258,8 @@ button:disabled { opacity: .45; cursor: not-allowed !important; }
 .studio-bike-name { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-right: 1px solid #656863; padding-right: 14px; font: 700 1.05rem var(--display); text-transform: uppercase; }
 .studio-account { display: inline-flex; align-items: center; gap: 7px; border: 1px solid #656863; border-radius: 0; padding: 8px 10px; background: transparent; color: #e5e3da; font-size: .7rem; font-weight: 700; cursor: pointer; }
 .studio-account:hover { border-color: var(--orange); color: var(--orange-pale); }
+.studio-header .preferences-trigger { border-color: #656863; color: #e5e3da; }
+.studio-header .preferences-trigger:hover, .studio-header .preferences-trigger[aria-expanded="true"] { border-color: var(--orange); color: var(--ink); }
 .studio-layout { flex: 1; min-height: calc(100vh - 122px); display: grid; grid-template-columns: minmax(0, 1fr) 405px; }
 .studio-workspace { min-width: 0; padding: 25px clamp(18px, 4vw, 62px) 19px; }
 .studio-toolbar { max-width: 1150px; display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin: 0 auto 18px; }
@@ -466,6 +516,7 @@ button:disabled { opacity: .45; cursor: not-allowed !important; }
   .studio-header { grid-template-columns: 1fr auto 1fr; }
   .studio-menu { gap: 9px; }
   .studio-bike-name { max-width: 190px; font-size: .95rem; padding-right: 10px; }
+  .workshop-choices { grid-template-columns: 1fr; max-width: 800px; }
 }
 @media (max-width: 720px) {
   .hero { min-height: 700px; align-items: flex-start; padding: 43px 23px 300px; }
@@ -603,6 +654,14 @@ button:disabled { opacity: .45; cursor: not-allowed !important; }
   .studio-bottom-bar > span { gap: 3px; font-size: .55rem; }
   .studio-bottom-bar button { gap: 3px; padding: 6px 5px; font-size: .56rem; }
   .studio-bottom-bar button svg { width: 13px; }
+  .workshop-header { grid-template-columns: auto 1fr auto; }
+  .workshop-intro { padding: 39px 17px 24px; }
+  .workshop-intro h1 { font-size: clamp(3.15rem, 14vw, 4.4rem); }
+  .workshop-choices { gap: 28px; padding: 0 17px 45px; }
+  .workshop-bike-grid { grid-template-columns: 1fr; }
+  .workshop-bike-image { width: 78px; }
+  .workshop-warning { width: calc(100% - 34px); }
+  .custom-bike-card { padding: 20px; box-shadow: 4px 4px 0 var(--ink); }
   .account-modal { padding: 31px 22px 23px; box-shadow: 6px 6px 0 var(--orange); }
   .account-modal h2 { font-size: 2.55rem; }
 }

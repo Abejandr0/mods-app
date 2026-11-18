@@ -1,11 +1,17 @@
-# Reemplaza por el dominio DNS que apunta a la Elastic IP de EC2.
-taller.tudominio.com {
+motomod.ddnsfree.com {
 	encode zstd gzip
 
-	@api path /api/* /healthz
-	reverse_proxy @api 127.0.0.1:8000
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8000
+	}
 
-	root * /var/www/motomod
-	try_files {path} /index.html
-	file_server
+	handle /healthz {
+		reverse_proxy 127.0.0.1:8000
+	}
+
+	handle {
+		root * /var/www/motomod
+		try_files {path} /index.html
+		file_server
+	}
 }
