@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   ArrowDown, ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, CircleHelp,
   Download, Eye, EyeOff, Gauge, ImagePlus, LogIn, LogOut, Menu, MessageCircle,
-  Moon, MoreHorizontal, RotateCcw, ShieldCheck, Sparkles, UserRound, X,
+  Accessibility, Contrast, Languages, Moon, MoreHorizontal, RotateCcw, Settings2, ShieldCheck, Sparkles, Sun, Type, UserRound, X,
 } from "lucide-react";
 import { apiFetch } from "./api";
 
@@ -82,6 +82,10 @@ export default function App() {
   const [authBusy, setAuthBusy] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [accountView, setAccountView] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">(() => localStorage.getItem("motomod-theme") === "dark" ? "dark" : "light");
+  const [largeText, setLargeText] = useState(() => localStorage.getItem("motomod-large-text") === "true");
+  const [highContrast, setHighContrast] = useState(() => localStorage.getItem("motomod-high-contrast") === "true");
+  const [reducedMotion, setReducedMotion] = useState(() => localStorage.getItem("motomod-reduced-motion") === "true");
   const [showPassword, setShowPassword] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [catalogError, setCatalogError] = useState("");
@@ -102,6 +106,16 @@ export default function App() {
     apiFetch("/api/status").then(r => r.json()).then(setServiceStatus).catch(() => setServiceStatus({ chat_ready: false, image_ready: false, ai_is_simulated: false }));
   }, []);
   useEffect(() => { chatEnd.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy]);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.classList.toggle("accessibility-large-text", largeText);
+    document.documentElement.classList.toggle("accessibility-high-contrast", highContrast);
+    document.documentElement.classList.toggle("accessibility-reduced-motion", reducedMotion);
+    localStorage.setItem("motomod-theme", theme);
+    localStorage.setItem("motomod-large-text", String(largeText));
+    localStorage.setItem("motomod-high-contrast", String(highContrast));
+    localStorage.setItem("motomod-reduced-motion", String(reducedMotion));
+  }, [theme, largeText, highContrast, reducedMotion]);
   useEffect(() => {
     if (!authOpen && !accountView) return;
     accountModal.current?.querySelector<HTMLElement>("input, button")?.focus();
@@ -282,6 +296,7 @@ export default function App() {
             <div className="nav-actions">
               {user ? <button className="nav-account" onClick={() => setAccountView(true)}><UserRound size={16} />{user.name.split(" ")[0]}</button>
                 : <button className="nav-login" onClick={() => { setAuthMode("login"); setAuthOpen(true); }}>Iniciar sesión</button>}
+              <PreferencesMenu theme={theme} setTheme={setTheme} largeText={largeText} setLargeText={setLargeText} highContrast={highContrast} setHighContrast={setHighContrast} reducedMotion={reducedMotion} setReducedMotion={setReducedMotion} />
               <button className="nav-cta" onClick={goToModels}>Probar ahora <ArrowRight size={16} /></button>
             </div>
             <button className="menu-toggle" onClick={() => setMobileMenu(v => !v)} aria-label={mobileMenu ? "Cerrar menú" : "Abrir menú"}>{mobileMenu ? <X /> : <Menu />}</button>
@@ -379,7 +394,7 @@ export default function App() {
           <header className="studio-header">
             <button className="studio-back" onClick={goHome}><ArrowLeft size={17} /><span>Salir del taller</span></button>
             <a className="brand studio-brand" href="#inicio" onClick={e => { e.preventDefault(); goHome(); }}><MotoMark /><span className="brand-word">MOTOMOD<small>TALLER DIGITAL</small></span></a>
-            <div className="studio-menu"><span className="studio-bike-name">{bike?.name}</span><button className="studio-account" onClick={() => user ? setAccountView(true) : (setAuthMode("signup"), setAuthOpen(true))}>{user ? <UserRound size={16} /> : <LogIn size={16} />}{user ? user.name.split(" ")[0] : "Crear cuenta"}</button></div>
+            <div className="studio-menu"><span className="studio-bike-name">{bike?.name}</span><PreferencesMenu theme={theme} setTheme={setTheme} largeText={largeText} setLargeText={setLargeText} highContrast={highContrast} setHighContrast={setHighContrast} reducedMotion={reducedMotion} setReducedMotion={setReducedMotion} /><button className="studio-account" onClick={() => user ? setAccountView(true) : (setAuthMode("signup"), setAuthOpen(true))}>{user ? <UserRound size={16} /> : <LogIn size={16} />}{user ? "Mi perfil" : "Crear cuenta"}</button></div>
           </header>
           <div className="studio-layout">
             <section className="studio-workspace">
@@ -434,7 +449,7 @@ export default function App() {
         <section ref={accountModal} className="account-modal" role="dialog" aria-modal="true" aria-labelledby="account-title">
           <button className="modal-close" onClick={() => { setAuthOpen(false); setAccountView(false); }} aria-label="Cerrar"><X size={19} /></button>
           {accountView && user ? <>
-            <div className="account-icon"><UserRound size={21} /></div><div className="eyebrow dark"><span className="eyebrow-line" /> MI GARAJE</div><h2 id="account-title">Hola, {user.name.split(" ")[0]}.</h2><p className="account-copy">Tu cuenta está lista. Puedes seguir usando el taller en este dispositivo.</p>
+            <div className="account-icon"><UserRound size={21} /></div><div className="eyebrow dark"><span className="eyebrow-line" /> MI PERFIL</div><h2 id="account-title">Hola, {user.name.split(" ")[0]}.</h2><p className="account-copy">Tu perfil de MotoMod. Puedes seguir usando el taller en este dispositivo.</p>
             <div className="account-details"><span>Nombre</span><b>{user.name}</b><span>Correo electrónico</span><b>{user.email}</b><span>Cuenta creada</span><b>Sesión protegida</b></div>
             <div className="account-note"><CircleHelp size={15} />Las fotos e historial actuales permanecen en esta sesión; todavía no se guardan en la nube.</div>
             <button className="account-submit signout" onClick={() => void signOut()}><LogOut size={16} />Cerrar sesión</button>
@@ -459,6 +474,50 @@ export default function App() {
 }
 
 function ArrowUpRightIcon() { return <ArrowRight size={15} className="arrow-up-right" aria-hidden="true" />; }
+
+type PreferencesMenuProps = {
+  theme: "light" | "dark";
+  setTheme: (value: "light" | "dark") => void;
+  largeText: boolean;
+  setLargeText: (value: boolean) => void;
+  highContrast: boolean;
+  setHighContrast: (value: boolean) => void;
+  reducedMotion: boolean;
+  setReducedMotion: (value: boolean) => void;
+};
+
+function PreferencesMenu(props: PreferencesMenuProps) {
+  const [open, setOpen] = useState(false);
+  const menu = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !menu.current?.contains(event.target)) setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    window.addEventListener("pointerdown", closeOnOutside);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("pointerdown", closeOnOutside);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  return <div className="preferences" ref={menu}>
+    <button className="preferences-trigger" aria-label="Abrir preferencias" aria-expanded={open} aria-controls="preferences-panel" onClick={() => setOpen(value => !value)}><Settings2 size={17} /><span>Opciones</span></button>
+    {open && <section className="preferences-panel" id="preferences-panel" aria-label="Preferencias de apariencia y accesibilidad">
+      <div className="preferences-title"><Accessibility size={17} /><b>Preferencias</b></div>
+      <label className="preferences-language"><span><Languages size={15} />Idioma</span><select aria-label="Idioma de la interfaz" value="es" onChange={() => undefined}><option value="es">Español</option><option value="en" disabled>English · próximamente</option></select></label>
+      <div className="preferences-section"><span className="preferences-label">Apariencia</span><div className="theme-options" role="group" aria-label="Tema de color"><button aria-pressed={props.theme === "light"} onClick={() => props.setTheme("light")}><Sun size={15} />Claro</button><button aria-pressed={props.theme === "dark"} onClick={() => props.setTheme("dark")}><Moon size={15} />Oscuro</button></div></div>
+      <div className="preferences-section"><span className="preferences-label">Accesibilidad</span>
+        <label className="preferences-toggle"><span><Type size={15} />Texto grande</span><input type="checkbox" checked={props.largeText} onChange={event => props.setLargeText(event.target.checked)} /></label>
+        <label className="preferences-toggle"><span><Contrast size={15} />Alto contraste</span><input type="checkbox" checked={props.highContrast} onChange={event => props.setHighContrast(event.target.checked)} /></label>
+        <label className="preferences-toggle"><span><Accessibility size={15} />Reducir movimiento</span><input type="checkbox" checked={props.reducedMotion} onChange={event => props.setReducedMotion(event.target.checked)} /></label>
+      </div>
+    </section>}
+  </div>;
+}
 
 function MotoMark() {
   return <span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 40"><path d="M20.7 1.5 4.4 22.1h10.1L11.8 38.5l16-22.2H17.5z" /></svg></span>;
