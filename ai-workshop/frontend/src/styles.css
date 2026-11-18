@@ -668,3 +668,95 @@ button:disabled { opacity: .45; cursor: not-allowed !important; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* Dark theme refinements: consistent layered surfaces and readable controls. */
+:root[data-theme="dark"] {
+  --paper: #111715;
+  --paper-light: #1d2522;
+  --ink: #f4f2e9;
+  --muted: #b9c0b9;
+  --sage: #27312b;
+  --orange-pale: #664a25;
+}
+:root[data-theme="dark"] .site-shell,
+:root[data-theme="dark"] .workshop-page,
+:root[data-theme="dark"] .studio-page { background: var(--paper); color: #f4f2e9; }
+:root[data-theme="dark"] .site-nav,
+:root[data-theme="dark"] .studio-workspace,
+:root[data-theme="dark"] .models-section,
+:root[data-theme="dark"] .faq-section,
+:root[data-theme="dark"] .how-section,
+:root[data-theme="dark"] .workshop-samples,
+:root[data-theme="dark"] .custom-bike-card,
+:root[data-theme="dark"] .account-modal,
+:root[data-theme="dark"] .preferences-panel,
+:root[data-theme="dark"] .site-footer { background-color: var(--paper-light); color: #f4f2e9; }
+:root[data-theme="dark"] .section-heading,
+:root[data-theme="dark"] .bike-card,
+:root[data-theme="dark"] .workshop-bike,
+:root[data-theme="dark"] .workshop-bike-copy,
+:root[data-theme="dark"] .account-details,
+:root[data-theme="dark"] .toolbar-controls button,
+:root[data-theme="dark"] .tool-download,
+:root[data-theme="dark"] .selection-tools,
+:root[data-theme="dark"] .mask-confirm,
+:root[data-theme="dark"] .version-card,
+:root[data-theme="dark"] .chat-panel,
+:root[data-theme="dark"] .chat-messages,
+:root[data-theme="dark"] .chat-compose,
+:root[data-theme="dark"] .workshop-field input,
+:root[data-theme="dark"] .workshop-field select,
+:root[data-theme="dark"] .account-form input { background-color: #252e2a; color: #f4f2e9; }
+:root[data-theme="dark"] .trust-strip,
+:root[data-theme="dark"] .cta-band,
+:root[data-theme="dark"] .studio-bottom-bar { background: #090d0b; color: #f4f2e9; }
+:root[data-theme="dark"] .hero-content > p,
+:root[data-theme="dark"] .hero-proof,
+:root[data-theme="dark"] .section-heading p,
+:root[data-theme="dark"] .faq-intro p,
+:root[data-theme="dark"] .step p,
+:root[data-theme="dark"] .bike-info p,
+:root[data-theme="dark"] .sample-disclaimer,
+:root[data-theme="dark"] .workshop-intro > p,
+:root[data-theme="dark"] .workshop-heading > p,
+:root[data-theme="dark"] .custom-bike-card > p,
+:root[data-theme="dark"] .account-copy,
+:root[data-theme="dark"] .account-switch,
+:root[data-theme="dark"] .account-optional,
+:root[data-theme="dark"] .preferences-label,
+:root[data-theme="dark"] .studio-kicker,
+:root[data-theme="dark"] .chat-heading > div > span { color: #c4cbc4; }
+:root[data-theme="dark"] .filter-chip,
+:root[data-theme="dark"] .preferences-language select,
+:root[data-theme="dark"] .preferences-toggle,
+:root[data-theme="dark"] .theme-options button,
+:root[data-theme="dark"] .studio-account,
+:root[data-theme="dark"] .studio-back { color: #f4f2e9; }
+:root[data-theme="dark"] .filter-chip:hover,
+:root[data-theme="dark"] .preferences-trigger,
+:root[data-theme="dark"] .preferences-language select,
+:root[data-theme="dark"] .theme-options button { background-color: #252e2a; }
+:root[data-theme="dark"] .chat-bubble.assistant { background: #303a35; color: #f4f2e9; }
+:root[data-theme="dark"] .chat-context { background: #303a35; color: #e9ece6; }
+:root[data-theme="dark"] .chat-compose textarea { color: #f4f2e9; }
+:root[data-theme="dark"] .chat-compose textarea::placeholder,
+:root[data-theme="dark"] .account-form input::placeholder { color: #b1b9b1; }
+:root[data-theme="dark"] .selection-tools button,
+:root[data-theme="dark"] .mask-confirm button,
+:root[data-theme="dark"] .modal-close { color: #e1e5df; }
+:root[data-theme="dark"] .selection-tools button:hover,
+:root[data-theme="dark"] .mask-confirm button:hover,
+:root[data-theme="dark"] .modal-close:hover { background: #38443e; }
+:root[data-theme="dark"] .workshop-note,
+:root[data-theme="dark"] .photo-privacy,
+:root[data-theme="dark"] .canvas-footnote { color: #c4cbc4; }
+:root[data-theme="dark"] .own-photo-preview { background: #252e2a; color: #f4f2e9; }
+:root[data-theme="dark"] .faq-list details { border-color: #46514b; }
+:root[data-theme="dark"] .account-details,
+:root[data-theme="dark"] .preferences-panel,
+:root[data-theme="dark"] .preferences-language,
+:root[data-theme="dark"] .account-form input,
+:root[data-theme="dark"] .workshop-field input,
+:root[data-theme="dark"] .workshop-field select { border-color: #69756d; }
+:root[data-theme="dark"].accessibility-high-contrast { --paper: #050706; --paper-light: #101412; --muted: #f7f7f2; }
+:root.accessibility-high-contrast :is(.inline-warning, .service-warning, .part-prompt, .selection-hint) { border-width: 3px; }

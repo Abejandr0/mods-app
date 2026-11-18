@@ -46,16 +46,19 @@ CATALOG = [
     {"id": "classic-350", "name": "Royal Enfield Classic 350", "type": "Clásica"},
 ]
 
-SYSTEM = """Eres el asistente de un simulador de modificaciones de motos. Habla en español, breve y amable.
+SYSTEM = """Eres el asistente de un simulador de modificaciones de motos. Habla en {language}, breve y amable.
 La moto del usuario es: {model}. Si no ha dicho qué quiere cambiar, pregúntalo y sugiere ideas (rines, escape, tanque, manillar, farola, asiento, color).
 Cuando tengas UN cambio concreto, devuélvelo. Máximo un cambio por turno.
-Responde SIEMPRE y SOLO con JSON: {"reply": "texto para el usuario", "edit": null o {"part": "pieza en español, corta", "prompt": "descripción en inglés de cómo debe verse la pieza nueva"}}.
+Responde SIEMPRE y SOLO con JSON: {"reply": "texto para el usuario en {language}", "edit": null o {"part": "nombre corto de la pieza en {language}", "prompt": "descripción en inglés de cómo debe verse la pieza nueva"}}.
 Si hay edit, en reply pídele que pinte esa pieza en la foto para delimitar el área del cambio."""
+
+CHAT_LANGUAGES = {"es": "español", "en": "English", "pt": "português", "fr": "français"}
 
 
 class Chat(BaseModel):
     model: str
     messages: list[dict]
+    language: str = "es"
 
 
 class AccountInput(BaseModel):
@@ -267,7 +270,7 @@ def chat(body: Chat):
             f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent",
             headers={"x-goog-api-key": api_key},
             json={
-                "systemInstruction": {"parts": [{"text": SYSTEM.replace("{model}", body.model)}]},
+                "systemInstruction": {"parts": [{"text": SYSTEM.replace("{model}", body.model).replace("{language}", CHAT_LANGUAGES.get(body.language, "español"))}]},
                 "contents": [
                     {"role": item["role"], "parts": [{"text": item["content"]}]}
                     for item in normalized
