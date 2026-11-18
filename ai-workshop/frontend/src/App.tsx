@@ -7,12 +7,13 @@ import {
 } from "lucide-react";
 import { apiFetch } from "./api";
 import { localeNames, translate, type Locale } from "./i18n";
-import { deleteGarageEntry, listGarageEntries, saveGarageEntry, type GarageEntry } from "./garageStorage";
 
 type Bike = { id: string; name: string; type: string };
 type Msg = { role: "user" | "assistant"; content: string };
 type Edit = { part: string; prompt: string };
 type Version = { id: string; url: string; blob: Blob; label: string };
+type GarageVersionInfo = { id: string; position: number; label: string; mimeType: string };
+type GarageEntry = { id: string; bikeId: string; bikeName: string; bikeType: string; createdAt: string; updatedAt: string; versions: GarageVersionInfo[] };
 type User = { id: number; name: string; email: string };
 type Screen = "home" | "garage" | "workshop" | "studio";
 type AuthMode = "login" | "signup";
@@ -97,7 +98,13 @@ export default function App() {
   const [versions, setVersions] = useState<Version[]>([]);
   const [at, setAt] = useState(0);
   const [garageId, setGarageId] = useState<string | null>(null);
-  const [garageCreatedAt, setGarageCreatedAt] = useState<number | null>(null);
+  const [cloudOptIn, setCloudOptIn] = useState(false);
+  const [garageSaved, setGarageSaved] = useState(false);
+  const [garageSaving, setGarageSaving] = useState(false);
+  const [garageLoading, setGarageLoading] = useState(false);
+  const [garageListLoading, setGarageListLoading] = useState(false);
+  const [saveAfterAuth, setSaveAfterAuth] = useState(false);
+  const [garageSyncAttempt, setGarageSyncAttempt] = useState(0);
   const [garageEntries, setGarageEntries] = useState<GarageEntry[]>([]);
   const [garageError, setGarageError] = useState(false);
   const [msgs, setMsgs] = useState<Msg[]>([]);
@@ -122,6 +129,7 @@ export default function App() {
   const [authError, setAuthError] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   const [user, setUser] = useState<User | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [accountView, setAccountView] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(() => localStorage.getItem("motomod-theme") === "dark" ? "dark" : "light");
   const [largeText, setLargeText] = useState(() => localStorage.getItem("motomod-large-text") === "true");
@@ -136,6 +144,7 @@ export default function App() {
   const fileInput = useRef<HTMLInputElement>(null);
   const ownPhotoInput = useRef<HTMLInputElement>(null);
   const accountModal = useRef<HTMLElement>(null);
+  const syncingGarage = useRef(new Set<string>());
   const filteredBikes = bikes.filter(b => filter === "Todas" || b.type === filter);
   const currentSample = bike ? SAMPLE[bike.id] : undefined;
   const current = versions[at];
@@ -165,30 +174,67 @@ export default function App() {
   useEffect(() => {
     apiFetch("/api/catalog").then(r => { if (!r.ok) throw new Error(); return r.json(); })
       .then((data: Bike[]) => setBikes(data)).catch(() => setCatalogError({ key: "El backend no responde. Puedes recorrer la experiencia, pero el chat y la edición necesitan el servidor." }));
-    apiFetch("/api/auth/me").then(r => r.json()).then(d => setUser(d.user)).catch(() => undefined);
+    apiFetch("/api/auth/me").then(r => r.json()).then(d => setUser(d.user)).catch(() => undefined).finally(() => setAuthChecked(true));
     apiFetch("/api/status").then(r => r.json()).then(setServiceStatus).catch(() => setServiceStatus({ chat_ready: false, image_ready: false, ai_is_simulated: false }));
   }, []);
   useEffect(() => {
-    void listGarageEntries().then(setGarageEntries).catch(() => setGarageError(true));
-  }, []);
+    if (!user) { setGarageEntries([]); setGarageError(false); setGarageListLoading(false); return; }
+    let cancelled = false;
+    setGarageListLoading(true);
+    apiFetch("/api/garage").then(async response => {
+      if (!response.ok) throw new Error("No se pudo cargar Mi garaje.");
+      return response.json() as Promise<GarageEntry[]>;
+    }).then(entries => { if (!cancelled) { setGarageEntries(entries); setGarageError(false); setGarageListLoading(false); } })
+      .catch(() => { if (!cancelled) { setGarageError(true); setGarageListLoading(false); } });
+    return () => { cancelled = true; };
+  }, [user]);
   useEffect(() => {
-    if (!bike || !versions.length || !garageId) return;
+    if (!user || !cloudOptIn || !bike || !versions.length || !garageId || syncingGarage.current.has(garageId)) return;
     const existing = garageEntries.find(entry => entry.id === garageId);
-    const unchanged = existing && existing.bikeId === bike.id && existing.bikeName === bike.name && existing.bikeType === bike.type && existing.versions.length === versions.length
-      && existing.versions.every((version, index) => version.id === versions[index]?.id);
-    if (unchanged) return;
-    const now = Date.now();
-    const entry: GarageEntry = {
-      id: garageId,
-      bikeId: bike.id,
-      bikeName: bike.name,
-      bikeType: bike.type,
-      createdAt: garageCreatedAt || now,
-      updatedAt: now,
-      versions: versions.map(version => ({ id: version.id, label: version.label, blob: version.blob })),
-    };
-    void saveGarageEntry(entry).then(() => listGarageEntries()).then(setGarageEntries).catch(() => setGarageError(true));
-  }, [bike, versions, garageId, garageCreatedAt, garageEntries]);
+    const needsProject = !existing || existing.bikeId !== bike.id || existing.bikeName !== bike.name || existing.bikeType !== bike.type;
+    const missingVersions = versions.filter(version => !existing?.versions.some(saved => saved.id === version.id));
+    const versionOrderChanged = !existing || existing.versions.map(version => version.id).join("|") !== versions.map(version => version.id).join("|");
+    if (!needsProject && !versionOrderChanged) { setGarageSaved(true); return; }
+    let completed = false;
+    syncingGarage.current.add(garageId);
+    setGarageSaving(true); setGarageSaved(false); setGarageError(false);
+    void (async () => {
+      try {
+        if (needsProject) {
+          const response = await apiFetch(`/api/garage/${encodeURIComponent(garageId)}`, {
+            method: "PUT", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ bike_id: bike.id, bike_name: bike.name, bike_type: bike.type }),
+          });
+          if (!response.ok) throw new Error(await readError(response, "No se pudo guardar el proyecto en Mi garaje."));
+        }
+        for (const [position, version] of versions.entries()) {
+          if (!missingVersions.some(item => item.id === version.id)) continue;
+          const form = new FormData();
+          form.append("image", version.blob, `moto-${position + 1}.${version.blob.type.split("/")[1] || "png"}`);
+          form.append("label", version.label); form.append("position", String(position));
+          const response = await apiFetch(`/api/garage/${encodeURIComponent(garageId)}/versions/${encodeURIComponent(version.id)}`, { method: "PUT", body: form });
+          if (!response.ok) throw new Error(await readError(response, "No se pudo guardar una imagen del proyecto."));
+        }
+        if (versionOrderChanged) {
+          const synced = await apiFetch(`/api/garage/${encodeURIComponent(garageId)}/versions`, {
+            method: "PUT", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ version_ids: versions.map(version => version.id) }),
+          });
+          if (!synced.ok) throw new Error(await readError(synced, "No se pudo sincronizar el historial del proyecto."));
+        }
+        const refreshed = await apiFetch("/api/garage");
+        if (!refreshed.ok) throw new Error("No se pudo actualizar Mi garaje.");
+        setGarageEntries(await refreshed.json()); setGarageSaved(true); setGarageError(false); completed = true;
+      } catch (err) {
+        setGarageError(true);
+        if (err instanceof Error) setError(t(err.message));
+      } finally {
+        syncingGarage.current.delete(garageId);
+        setGarageSaving(false);
+        if (completed) setGarageSyncAttempt(value => value + 1);
+      }
+    })();
+  }, [user, cloudOptIn, bike, versions, garageId, garageEntries, garageSyncAttempt]);
   useEffect(() => { chatEnd.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -206,7 +252,7 @@ export default function App() {
     if (!authOpen && !accountView) return;
     accountModal.current?.querySelector<HTMLElement>("input, button")?.focus();
     const modalKeys = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { setAuthOpen(false); setAccountView(false); }
+      if (event.key === "Escape") { setAuthOpen(false); setAccountView(false); setSaveAfterAuth(false); }
       if (event.key === "Tab" && accountModal.current) {
         const focusable = Array.from(accountModal.current.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), a[href]'));
         if (!focusable.length) return;
@@ -229,6 +275,7 @@ export default function App() {
 
   function openGarage() {
     setMobileMenu(false);
+    if (!user && bike && versions.length) setSaveAfterAuth(true);
     window.history.pushState({}, "", `${window.location.pathname}${window.location.search}#/garaje`);
     setScreen("garage");
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -251,7 +298,8 @@ export default function App() {
       if (!response.ok) throw new Error(t("No pude cargar la foto de referencia. Inténtalo de nuevo."));
       const blob = await response.blob();
       const version = { id: crypto.randomUUID(), url: URL.createObjectURL(blob), blob, label: "Foto de muestra" };
-      setGarageId(crypto.randomUUID()); setGarageCreatedAt(Date.now());
+      setGarageId(crypto.randomUUID());
+      setCloudOptIn(!!user); setGarageSaved(false); setGarageError(false);
       setBike(selectedBike); setVersions([version]); setAt(0); setStrokes([]);
       setSuggestions(pickIdeas(locale));
       setMsgs([{ role: "assistant", content: `${t("¡Listo! Cargué una foto de referencia de")} ${selectedBike.name}. ${t(sample.assistantNote)} ${t("Dime qué quieres personalizar.")}` }]);
@@ -268,7 +316,8 @@ export default function App() {
     if (!ownPhoto) { setError(t("Sube una foto de tu moto para empezar.")); return; }
     const selectedBike: Bike = { id: `propia-${Date.now()}`, name, type: ownVehicleType };
     const version = { id: crypto.randomUUID(), url: URL.createObjectURL(ownPhoto), blob: ownPhoto, label: "Mi foto" };
-    setGarageId(crypto.randomUUID()); setGarageCreatedAt(Date.now());
+    setGarageId(crypto.randomUUID());
+    setCloudOptIn(!!user); setGarageSaved(false); setGarageError(false);
     setBike(selectedBike); setVersions([version]); setAt(0); setStrokes([]);
     setSuggestions(pickIdeas(locale));
     setMsgs([{ role: "assistant", content: t("¡Listo! Ya tengo tu moto y tu foto. Cuéntame qué quieres personalizar.") }]);
@@ -280,6 +329,7 @@ export default function App() {
     if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) { setError(t("Elige una imagen JPG, PNG o WebP.")); return; }
     const version = { id: crypto.randomUUID(), url: URL.createObjectURL(file), blob: file, label: "Mi foto" };
     setVersions(v => [...v.slice(0, at + 1), version]); setAt(at + 1); setError(""); setPending(null); setStrokes([]);
+    setGarageSaved(false);
     setSuggestions(pickIdeas(locale));
     setMsgs(m => [...m, { role: "assistant", content: t("Foto lista. Cuéntame qué te gustaría cambiar.") }]);
   }
@@ -384,6 +434,7 @@ export default function App() {
       if (!response.ok) throw new Error(t(await readError(response, "No pude aplicar el cambio.")));
       const blob = await response.blob();
       setVersions(v => [...v.slice(0, at + 1), { id: crypto.randomUUID(), url: URL.createObjectURL(blob), blob, label: pending.part }]);
+      setGarageSaved(false);
       setAt(at + 1); setMsgs(m => [...m, { role: "assistant", content: `${t("Listo:")} ${pending.part} ${t("actualizado con Stability AI.")}` }]);
       setPending(null); setStrokes([]);
     } catch (err) { setError(err instanceof Error ? t(err.message) : t("Falló la edición. Inténtalo de nuevo.")); }
@@ -400,32 +451,56 @@ export default function App() {
       const response = await apiFetch(`/api/auth/${authMode}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       if (!response.ok) throw new Error(t(await readError(response, "No pude completar la solicitud.")));
       const data = await response.json(); setUser(data.user); setAuthOpen(false); setAccountView(false);
+      if (saveAfterAuth) { setCloudOptIn(true); setGarageSaved(false); setSaveAfterAuth(false); }
     } catch (err) { setAuthError(err instanceof Error ? t(err.message) : t("Revisa tu conexión e inténtalo de nuevo.")); }
     setAuthBusy(false);
   }
 
   async function signOut() {
     await apiFetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
-    setUser(null); setAccountView(false);
+    setUser(null); setAccountView(false); setCloudOptIn(false); setGarageSaved(false); setBike(null); setVersions([]); setAt(0); setGarageId(null);
   }
 
-  function openGarageEntry(entry: GarageEntry) {
-    setBike({ id: entry.bikeId || `garage-${entry.id}`, name: entry.bikeName, type: entry.bikeType });
-    setVersions(entry.versions.map(version => ({ ...version, id: version.id || crypto.randomUUID(), url: URL.createObjectURL(version.blob) })));
-    setAt(entry.versions.length - 1);
-    setGarageId(entry.id); setGarageCreatedAt(entry.createdAt);
-    setMsgs([{ role: "assistant", content: t("Proyecto cargado desde tu garaje.") }]);
-    setPending(null); setStrokes([]); setError(""); setCompare(false);
-    window.history.pushState({}, "", `${window.location.pathname}${window.location.search}#/taller/estudio`);
-    setScreen("studio");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+  function saveCurrentToGarage() {
+    if (!bike || !versions.length) return;
+    if (!user) {
+      setSaveAfterAuth(true); setAuthMode("signup"); setAuthOpen(true); return;
+    }
+    setCloudOptIn(true); setGarageSaved(false); setGarageError(false); setGarageSyncAttempt(value => value + 1);
+  }
+
+  async function openGarageEntry(entry: GarageEntry) {
+    setGarageLoading(true); setGarageError(false);
+    try {
+      const loadedVersions = await Promise.all(entry.versions.map(async version => {
+        const response = await apiFetch(`/api/garage/${encodeURIComponent(entry.id)}/versions/${encodeURIComponent(version.id)}`);
+        if (!response.ok) throw new Error("No se pudo abrir una imagen del garaje.");
+        const blob = await response.blob();
+        return { id: version.id, label: version.label, blob, url: URL.createObjectURL(blob) };
+      }));
+      if (!loadedVersions.length) throw new Error("Este proyecto no tiene imágenes guardadas.");
+      setBike({ id: entry.bikeId, name: entry.bikeName, type: entry.bikeType });
+      setVersions(loadedVersions); setAt(loadedVersions.length - 1);
+      setGarageId(entry.id);
+      setCloudOptIn(true); setGarageSaved(true);
+      setMsgs([{ role: "assistant", content: t("Proyecto cargado desde tu garaje.") }]);
+      setPending(null); setStrokes([]); setError(""); setCompare(false);
+      window.history.pushState({}, "", `${window.location.pathname}${window.location.search}#/taller/estudio`);
+      setScreen("studio");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch {
+      setGarageError(true);
+    } finally {
+      setGarageLoading(false);
+    }
   }
 
   async function removeGarageEntry(entry: GarageEntry) {
-    if (!window.confirm(t("¿Eliminar esta moto y su historial guardado de este dispositivo?"))) return;
+    if (!window.confirm(t("¿Eliminar esta moto y todas sus imágenes de Mi garaje?"))) return;
     try {
-      await deleteGarageEntry(entry.id);
-      setGarageEntries(await listGarageEntries());
+      const response = await apiFetch(`/api/garage/${encodeURIComponent(entry.id)}`, { method: "DELETE" });
+      if (!response.ok) throw new Error("No se pudo eliminar el proyecto.");
+      setGarageEntries(current => current.filter(item => item.id !== entry.id));
       if (garageId === entry.id) setGarageId(null);
       setGarageError(false);
     } catch {
@@ -435,8 +510,10 @@ export default function App() {
 
   function goHome() {
     window.history.pushState({}, "", `${window.location.pathname}${window.location.search}`);
-    setScreen("home"); setBike(null); setVersions([]); setAt(0); setGarageId(null); setGarageCreatedAt(null); setPending(null); setStrokes([]); setError(""); window.scrollTo({ top: 0, behavior: "smooth" });
+    setScreen("home"); setBike(null); setVersions([]); setAt(0); setGarageId(null); setCloudOptIn(false); setGarageSaved(false); setPending(null); setStrokes([]); setError(""); window.scrollTo({ top: 0, behavior: "smooth" });
   }
+
+  const garageSaveLabel = garageSaving ? t("Guardando en la nube…") : garageSaved ? t("Guardado en mi garaje") : garageError ? t("Reintentar guardado") : user ? t("Guardar en mi garaje") : t("Crear cuenta para guardar");
 
   return (
     <div className="site-shell">
@@ -448,14 +525,14 @@ export default function App() {
             <div className="studio-menu"><PreferencesMenu locale={locale} setLocale={setLocale} t={t} theme={theme} setTheme={setTheme} largeText={largeText} setLargeText={setLargeText} highContrast={highContrast} setHighContrast={setHighContrast} reducedMotion={reducedMotion} setReducedMotion={setReducedMotion} /><button className="studio-account" onClick={openWorkshop}><ArrowRight size={16} />{t("Abrir taller")}</button></div>
           </header>
           <section className="garage-intro">
-            <div><div className="eyebrow dark"><span className="eyebrow-line" /> {t("TU ESPACIO PERSONAL")}</div><h1>{t("Mi garaje.")}</h1><p>{t("Tus motos, fotos originales y cambios guardados en este dispositivo.")}</p></div>
+            <div><div className="eyebrow dark"><span className="eyebrow-line" /> {t("TU ESPACIO PERSONAL")}</div><h1>{t("Mi garaje.")}</h1><p>{t("Tus motos, fotos originales y modificaciones guardadas en tu cuenta.")}</p></div>
             <button className="button-primary" onClick={openWorkshop}>{t("Añadir una moto")} <ArrowRight size={17} /></button>
           </section>
-          {garageError && <div className="inline-warning" role="alert"><CircleHelp size={16} />{t("No se pudo acceder al garaje local. Comprueba el espacio disponible del navegador.")}</div>}
-          {garageEntries.length ? <section className="garage-grid" aria-label={t("Motos guardadas")}>
-            {garageEntries.map(entry => <GarageCard key={entry.id} entry={entry} locale={locale} t={t} onOpen={() => openGarageEntry(entry)} onDelete={() => void removeGarageEntry(entry)} />)}
+          {garageError && <div className="inline-warning" role="alert"><CircleHelp size={16} />{t("No se pudo cargar el garaje en la nube. Comprueba tu conexión e inténtalo otra vez.")}</div>}
+          {!authChecked ? <section className="garage-empty"><h2>{t("Comprobando tu sesión…")}</h2></section> : !user ? <section className="garage-empty garage-auth-gate"><div className="garage-empty-icon"><UserRound size={28} /></div><h2>{t("Inicia sesión para ver tu garaje")}</h2><p>{t("Crea una cuenta o inicia sesión. Tus proyectos se guardan en tu cuenta y estarán disponibles al entrar desde otro dispositivo.")}</p><div><button className="button-primary" onClick={() => { setAuthMode("signup"); setAuthOpen(true); }}>{t("Crear cuenta")}</button><button className="text-link" onClick={() => { setAuthMode("login"); setAuthOpen(true); }}>{t("Iniciar sesión")}</button></div></section> : garageListLoading || garageLoading ? <section className="garage-empty"><h2>{t("Cargando proyecto…")}</h2></section> : garageEntries.length ? <section className="garage-grid" aria-label={t("Motos guardadas")}>
+            {garageEntries.map(entry => <GarageCard key={entry.id} entry={entry} locale={locale} t={t} onOpen={() => void openGarageEntry(entry)} onDelete={() => void removeGarageEntry(entry)} />)}
           </section> : <section className="garage-empty"><div className="garage-empty-icon"><FolderOpen size={28} /></div><h2>{t("Tu garaje está vacío")}</h2><p>{t("Empieza con una moto del catálogo o sube una foto. La guardaremos aquí junto a cada modificación.")}</p><button className="button-primary" onClick={openWorkshop}>{t("Probar una moto ahora")} <ArrowRight size={17} /></button></section>}
-          <p className="garage-local-note"><ShieldCheck size={15} />{t("El garaje se guarda en este navegador y dispositivo; no se sincroniza con la nube.")}</p>
+          {user && <p className="garage-local-note"><ShieldCheck size={15} />{t("Tus proyectos se guardan en la nube en tu cuenta y solo tú puedes abrirlos.")}</p>}
         </main>
       ) : screen === "home" ? (
         <>
@@ -560,7 +637,7 @@ export default function App() {
               <div className="faq-list">
                 <details><summary>{t("¿Necesito crear una cuenta para probar?")} <ChevronDown size={18} /></summary><p>{t("No. Puedes elegir un modelo y comenzar en el momento. La cuenta es opcional y sirve para identificar tu sesión en este dispositivo.")}</p></details>
                 <details><summary>{t("¿Las modificaciones son imágenes reales?")} <ChevronDown size={18} /></summary><p>{t("El chat consulta Gemini y las modificaciones se generan con Stability AI. Tú pintas la zona que quieres cambiar y esa máscara guía el inpainting.")}</p></details>
-                <details><summary>{t("¿Puedo usar mi propia moto y mi foto?")} <ChevronDown size={18} /></summary><p>{t("Sí. Entra a “Taller virtual”, escribe el nombre de tu moto y sube una foto JPG, PNG o WebP. También puedes cambiar la foto dentro del taller. Una vista lateral bien iluminada ayuda a marcar las piezas. La imagen se envía a Gemini para analizar la moto y a Stability AI al generar el cambio; MotoMod no la publica ni la guarda en tu cuenta. Si guardas el proyecto en Mi garaje, queda en este dispositivo.")}</p></details>
+                <details><summary>{t("¿Puedo usar mi propia moto y mi foto?")} <ChevronDown size={18} /></summary><p>{t("Sí. Entra a “Taller virtual”, escribe el nombre de tu moto y sube una foto JPG, PNG o WebP. También puedes cambiar la foto dentro del taller. Una vista lateral bien iluminada ayuda a marcar las piezas. La imagen se envía a Gemini para analizar la moto y a Stability AI al generar el cambio. Si guardas el proyecto en Mi garaje, las imágenes se sincronizan con tu cuenta y podrás abrirlas en otros dispositivos.")}</p></details>
               </div>
             </section>
           </main>
@@ -663,22 +740,22 @@ export default function App() {
               <div className="chat-compose"><textarea value={text} rows={2} disabled={!!busy} placeholder={t("Describe tu idea…")} aria-label={t("Describe la modificación")} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(text); } }} /><button className="send-button" onClick={() => void send(text)} disabled={!!busy || !text.trim()} aria-label={t("Enviar mensaje")}><ArrowRight size={18} /></button><small>{t("Enter para enviar · Shift + Enter para una nueva línea")}</small></div>
             </aside>
           </div>
-          <div className="studio-bottom-bar"><span><Sparkles size={14} /> {t("Tu imaginación conduce.")}</span><button onClick={() => fileInput.current?.click()}><ImagePlus size={15} />{t("Subir mi foto")}</button><input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={e => loadPhoto(e.target.files?.[0])} /><button onClick={openWorkshop}>{t("Cambiar de moto")} <ChevronRight size={15} /></button></div>
+          <div className="studio-bottom-bar"><span><Sparkles size={14} /> {t("Tu imaginación conduce.")}</span><button className="garage-save-action" onClick={saveCurrentToGarage} disabled={garageSaving || garageSaved} aria-label={garageSaveLabel} title={garageSaveLabel}>{garageSaved ? <Check size={15} /> : <FolderOpen size={15} />}{garageSaveLabel}</button><button onClick={() => fileInput.current?.click()}><ImagePlus size={15} />{t("Subir mi foto")}</button><input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={e => loadPhoto(e.target.files?.[0])} /><button onClick={openWorkshop}>{t("Cambiar de moto")} <ChevronRight size={15} /></button></div>
         </main>
       )}
 
-      {(authOpen || accountView) && <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) { setAuthOpen(false); setAccountView(false); } }}>
+      {(authOpen || accountView) && <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) { setAuthOpen(false); setAccountView(false); setSaveAfterAuth(false); } }}>
         <section ref={accountModal} className="account-modal" role="dialog" aria-modal="true" aria-labelledby="account-title">
-          <button className="modal-close" onClick={() => { setAuthOpen(false); setAccountView(false); }} aria-label={t("Cerrar")}><X size={19} /></button>
+          <button className="modal-close" onClick={() => { setAuthOpen(false); setAccountView(false); setSaveAfterAuth(false); }} aria-label={t("Cerrar")}><X size={19} /></button>
           {accountView && user ? <>
             <div className="account-icon"><UserRound size={21} /></div><div className="eyebrow dark"><span className="eyebrow-line" /> {t("MI PERFIL")}</div><h2 id="account-title">{t("Hola, ")}{user.name.split(" ")[0]}.</h2><p className="account-copy">{t("Tu perfil de MotoMod. Puedes seguir usando el taller en este dispositivo.")}</p>
             <div className="account-details"><span>{t("Nombre")}</span><b>{user.name}</b><span>{t("Correo electrónico")}</span><b>{user.email}</b><span>{t("Cuenta creada")}</span><b>{t("Sesión protegida")}</b></div>
-            <div className="account-note"><CircleHelp size={15} />{t("Las fotos e historial actuales permanecen en esta sesión; todavía no se guardan en la nube.")}</div>
+            <div className="account-note"><CircleHelp size={15} />{t("Los proyectos guardados en Mi garaje se sincronizan con tu cuenta; las fotos sin guardar solo permanecen en esta sesión.")}</div>
             <button className="account-submit signout" onClick={() => void signOut()}><LogOut size={16} />{t("Cerrar sesión")}</button>
           </> : <>
             <div className="account-icon"><Sparkles size={21} /></div><div className="eyebrow dark"><span className="eyebrow-line" /> {t(authMode === "signup" ? "BIENVENIDO AL GARAJE" : "QUÉ BUENO VERTE")}</div>
             <h2 id="account-title">{t(authMode === "signup" ? "Crea tu cuenta." : "Entra a tu cuenta.")}</h2>
-            <p className="account-copy">{t(authMode === "signup" ? "Guarda tu perfil en este dispositivo y vuelve al taller cuando quieras." : "Inicia sesión para identificar tu perfil en este dispositivo.")}</p>
+            <p className="account-copy">{t(authMode === "signup" ? "Crea una cuenta para guardar tus motos en Mi garaje y abrirlas desde otros dispositivos." : "Inicia sesión para acceder a tu perfil y a los proyectos de Mi garaje.")}</p>
             <form className="account-form" onSubmit={submitAuth}>
               {authMode === "signup" && <label>{t("Nombre")}<input name="name" autoComplete="name" required minLength={2} maxLength={60} placeholder={t("Cómo te llamamos")} /></label>}
               <label>{t("Correo electrónico")}<input name="email" type="email" autoComplete="email" required placeholder={t("tu@correo.com")} /></label>
@@ -702,12 +779,16 @@ function GarageCard({ entry, locale, t, onOpen, onDelete }: { entry: GarageEntry
   const latest = entry.versions[entry.versions.length - 1];
   useEffect(() => {
     if (!latest) return;
-    const url = URL.createObjectURL(latest.blob);
-    setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
+    let cancelled = false;
+    let url = "";
+    apiFetch(`/api/garage/${encodeURIComponent(entry.id)}/versions/${encodeURIComponent(latest.id)}`)
+      .then(response => { if (!response.ok) throw new Error("Unable to load image preview."); return response.blob(); })
+      .then(blob => { if (!cancelled) { url = URL.createObjectURL(blob); setPreviewUrl(url); } })
+      .catch(() => setPreviewUrl(""));
+    return () => { cancelled = true; if (url) URL.revokeObjectURL(url); };
   }, [latest]);
   const changes = entry.versions.slice(1).map(version => version.label);
-  const modifiedAt = new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(entry.updatedAt);
+  const modifiedAt = new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(new Date(entry.updatedAt));
   return <article className="garage-card">
     <button className="garage-card-preview" onClick={onOpen} aria-label={`${t("Abrir proyecto de")} ${entry.bikeName}`}>
       {previewUrl && <img src={previewUrl} alt={`${entry.bikeName} · ${t("última modificación")}`} />}

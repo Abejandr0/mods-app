@@ -31,7 +31,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type"],
 )
 
@@ -73,6 +73,12 @@ class AccountInput(BaseModel):
 class LoginInput(BaseModel):
     email: str
     password: str
+
+
+class GarageProjectInput(BaseModel):
+    bike_id: str
+    bike_name: str
+    bike_type: str
 
 
 @contextmanager
@@ -125,6 +131,28 @@ def init_auth_db():
                 token_hash TEXT PRIMARY KEY,
                 user_id {session_user_id_type} NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 expires_at TEXT NOT NULL
+            )
+        """)
+        db_execute(db, f"""
+            CREATE TABLE IF NOT EXISTS garage_projects (
+                id TEXT PRIMARY KEY,
+                user_id {session_user_id_type} NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                bike_id TEXT NOT NULL,
+                bike_name TEXT NOT NULL,
+                bike_type TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        db_execute(db, f"""
+            CREATE TABLE IF NOT EXISTS garage_versions (
+                project_id TEXT NOT NULL REFERENCES garage_projects(id) ON DELETE CASCADE,
+                id TEXT NOT NULL,
+                position INTEGER NOT NULL,
+                label TEXT NOT NULL,
+                mime_type TEXT NOT NULL,
+                image_data {blob_type} NOT NULL,
+                PRIMARY KEY (project_id, id)
             )
         """)
 
@@ -220,6 +248,160 @@ def logout(request: Request, response: FastAPIResponse):
         with db_connect() as db:
             db_execute(db, "DELETE FROM sessions WHERE token_hash = ?", (hashlib.sha256(token.encode()).hexdigest(),))
     response.delete_cookie(SESSION_COOKIE, path="/", httponly=True, samesite="lax")
+    return {"ok": True}
+
+
+def require_session_user(request: Request):
+    user = session_user(request)
+    if not user:
+        raise HTTPException(401, "Inicia sesión para usar Mi garaje.")
+    return user
+
+
+@app.get("/api/garage")
+def list_garage(request: Request):
+    user = require_session_user(request)
+    with db_connect() as db:
+        projects = db_execute(db, """
+            SELECT id, bike_id, bike_name, bike_type, created_at, updated_at
+            FROM garage_projects
+            WHERE user_id = ? AND EXISTS (SELECT 1 FROM garage_versions WHERE project_id = garage_projects.id)
+            ORDER BY updated_at DESC
+        """, (user["id"],)).fetchall()
+        result = []
+        for project in projects:
+            versions = db_execute(db, """
+                SELECT id, position, label, mime_type
+                FROM garage_versions WHERE project_id = ? ORDER BY position ASC
+            """, (project["id"],)).fetchall()
+            result.append({
+                "id": project["id"], "bikeId": project["bike_id"],
+                "bikeName": project["bike_name"], "bikeType": project["bike_type"],
+                "createdAt": project["created_at"], "updatedAt": project["updated_at"],
+                "versions": [{
+                    "id": version["id"], "position": version["position"],
+                    "label": version["label"], "mimeType": version["mime_type"],
+                } for version in versions],
+            })
+    return result
+
+
+@app.put("/api/garage/{project_id}")
+def save_garage_project(project_id: str, body: GarageProjectInput, request: Request):
+    user = require_session_user(request)
+    if not project_id or len(project_id) > 80 or any(len(value.strip()) > 120 for value in (body.bike_id, body.bike_name, body.bike_type)):
+        raise HTTPException(422, "Los datos de la moto no son válidos.")
+    now = datetime.now(timezone.utc).isoformat()
+    with db_connect() as db:
+        owner = db_execute(db, "SELECT user_id FROM garage_projects WHERE id = ?", (project_id,)).fetchone()
+        if owner and owner["user_id"] != user["id"]:
+            raise HTTPException(404, "No se encontró este proyecto en tu garaje.")
+        if owner:
+            db_execute(db, """
+                UPDATE garage_projects SET bike_id = ?, bike_name = ?, bike_type = ?, updated_at = ?
+                WHERE id = ? AND user_id = ?
+            """, (body.bike_id, body.bike_name, body.bike_type, now, project_id, user["id"]))
+        else:
+            db_execute(db, """
+                INSERT INTO garage_projects(id, user_id, bike_id, bike_name, bike_type, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (project_id, user["id"], body.bike_id, body.bike_name, body.bike_type, now, now))
+    return {"ok": True}
+
+
+@app.put("/api/garage/{project_id}/versions/{version_id}")
+async def save_garage_version(
+    project_id: str,
+    version_id: str,
+    request: Request,
+    image: UploadFile = File(...),
+    label: str = Form(...),
+    position: int = Form(...),
+):
+    user = require_session_user(request)
+    if not project_id or len(project_id) > 80 or not version_id or len(version_id) > 80 or len(label) > 120 or not 0 <= position < 100:
+        raise HTTPException(422, "Los datos de la versión no son válidos.")
+    if image.content_type not in ("image/jpeg", "image/png", "image/webp"):
+        raise HTTPException(422, "Guarda una imagen JPG, PNG o WebP.")
+    image_data = await image.read(12 * 1024 * 1024 + 1)
+    if len(image_data) > 12 * 1024 * 1024:
+        raise HTTPException(413, "Cada imagen del garaje debe pesar menos de 12 MB.")
+    try:
+        with Image.open(io.BytesIO(image_data)) as stored_image:
+            stored_image.verify()
+    except Exception as exc:
+        raise HTTPException(422, "El archivo guardado no es una imagen válida.") from exc
+
+    now = datetime.now(timezone.utc).isoformat()
+    with db_connect() as db:
+        project = db_execute(db, "SELECT user_id FROM garage_projects WHERE id = ?", (project_id,)).fetchone()
+        if not project or project["user_id"] != user["id"]:
+            raise HTTPException(404, "No se encontró este proyecto en tu garaje.")
+        version = db_execute(db, """
+            SELECT id FROM garage_versions WHERE project_id = ? AND id = ?
+        """, (project_id, version_id)).fetchone()
+        if not version:
+            count = db_execute(db, "SELECT COUNT(*) AS total FROM garage_versions WHERE project_id = ?", (project_id,)).fetchone()["total"]
+            if count >= 40:
+                raise HTTPException(413, "Este proyecto alcanzó el máximo de 40 imágenes guardadas. Borra una moto antigua para continuar.")
+        if version:
+            db_execute(db, """
+                UPDATE garage_versions SET position = ?, label = ?, mime_type = ?, image_data = ?
+                WHERE project_id = ? AND id = ?
+            """, (position, label, image.content_type, image_data, project_id, version_id))
+        else:
+            db_execute(db, """
+                INSERT INTO garage_versions(project_id, id, position, label, mime_type, image_data)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (project_id, version_id, position, label, image.content_type, image_data))
+        db_execute(db, "UPDATE garage_projects SET updated_at = ? WHERE id = ? AND user_id = ?", (now, project_id, user["id"]))
+    return {"ok": True}
+
+
+@app.put("/api/garage/{project_id}/versions")
+def sync_garage_version_list(project_id: str, body: dict, request: Request):
+    user = require_session_user(request)
+    version_ids = body.get("version_ids") if isinstance(body, dict) else None
+    if not isinstance(version_ids, list) or len(version_ids) > 40 or any(not isinstance(value, str) or len(value) > 80 for value in version_ids):
+        raise HTTPException(422, "El historial de versiones no es válido.")
+    keep_ids = set(version_ids)
+    if len(keep_ids) != len(version_ids):
+        raise HTTPException(422, "El historial contiene imágenes repetidas.")
+    with db_connect() as db:
+        project = db_execute(db, "SELECT user_id FROM garage_projects WHERE id = ?", (project_id,)).fetchone()
+        if not project or project["user_id"] != user["id"]:
+            raise HTTPException(404, "No se encontró este proyecto en tu garaje.")
+        current = db_execute(db, "SELECT id FROM garage_versions WHERE project_id = ?", (project_id,)).fetchall()
+        for version in current:
+            if version["id"] not in keep_ids:
+                db_execute(db, "DELETE FROM garage_versions WHERE project_id = ? AND id = ?", (project_id, version["id"]))
+    return {"ok": True}
+
+
+@app.get("/api/garage/{project_id}/versions/{version_id}")
+def get_garage_version(project_id: str, version_id: str, request: Request):
+    user = require_session_user(request)
+    with db_connect() as db:
+        version = db_execute(db, """
+            SELECT versions.image_data, versions.mime_type
+            FROM garage_versions AS versions
+            JOIN garage_projects AS projects ON projects.id = versions.project_id
+            WHERE projects.id = ? AND versions.id = ? AND projects.user_id = ?
+        """, (project_id, version_id, user["id"])).fetchone()
+    if not version:
+        raise HTTPException(404, "No se encontró la imagen de este proyecto.")
+    return Response(bytes(version["image_data"]), media_type=version["mime_type"], headers={"Cache-Control": "private, no-store"})
+
+
+@app.delete("/api/garage/{project_id}")
+def remove_garage_project(project_id: str, request: Request):
+    user = require_session_user(request)
+    with db_connect() as db:
+        exists = db_execute(db, "SELECT id FROM garage_projects WHERE id = ? AND user_id = ?", (project_id, user["id"])).fetchone()
+        if exists:
+            db_execute(db, "DELETE FROM garage_projects WHERE id = ? AND user_id = ?", (project_id, user["id"]))
+    if not exists:
+        raise HTTPException(404, "No se encontró este proyecto en tu garaje.")
     return {"ok": True}
 
 

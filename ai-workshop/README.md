@@ -10,7 +10,7 @@ Las fotos del catálogo son fotografías reales, descargadas localmente y acredi
 - Node.js 20.19 o superior (o 22.12+)
 - Una clave gratuita de Google AI Studio (`GEMINI_API_KEY`) para el chat. La generación de imágenes por API tiene facturación separada y no está incluida en Gemini Plus.
 
-El registro es opcional. En desarrollo, las cuentas se guardan en SQLite local (`backend/data/workshop.sqlite3`); en producción, configura PostgreSQL mediante `DATABASE_URL`. Las contraseñas se derivan mediante PBKDF2 y la sesión usa una cookie HttpOnly. El historial de imágenes no se sincroniza con la cuenta ni se guarda en nube.
+El taller se puede probar sin registro. Para guardar motos en **Mi garaje** hay que crear una cuenta o iniciar sesión. En desarrollo, las cuentas y el garaje usan SQLite local (`backend/data/workshop.sqlite3`); en producción, configura una base PostgreSQL persistente mediante `DATABASE_URL`. Los proyectos e imágenes se asocian al usuario y se pueden abrir en otros dispositivos al iniciar sesión. Las sesiones usan cookies HttpOnly y las contraseñas se derivan mediante PBKDF2.
 
 ## Ejecutar en desarrollo
 
@@ -37,7 +37,9 @@ Abre la URL que muestra Vite (normalmente http://localhost:5173).
 
 ## Cuentas
 
-En la barra superior puedes crear una cuenta o iniciar sesión. El acceso no bloquea la prueba del taller. Las cuentas son locales a la instalación; para una aplicación pública se debe configurar una base de datos central y HTTPS (`SECURE_COOKIES=true`).
+Puedes probar el taller como invitado. Al pulsar **Guardar en mi garaje**, la app pide crear una cuenta o iniciar sesión; después sincroniza el proyecto y cada modificación con el servidor. Mi garaje solo muestra proyectos del usuario autenticado. Para abrirlos en otro dispositivo, inicia sesión con la misma cuenta. En producción configura una base de datos PostgreSQL central mediante `DATABASE_URL` y HTTPS (`SECURE_COOKIES=true`); SQLite solo sirve para el desarrollo local.
+
+Las imágenes se guardan como datos binarios en la base de datos para mantener juntos los proyectos y sus versiones. Cada imagen admite hasta 12 MB y cada proyecto hasta 40 versiones. El espacio usado crece con las imágenes; revisa el límite de almacenamiento de tu proveedor de PostgreSQL antes de compartir el servicio.
 
 ## Probar la edición sin la interfaz
 
@@ -64,7 +66,7 @@ Render pedirá `GEMINI_API_KEY` y `DATABASE_URL`; introdúcelas en el panel de R
 
 ### Persistencia y disponibilidad
 
-La cuenta guarda usuarios y sesiones en Neon PostgreSQL. Fotos y resultados de edición se procesan en la solicitud y no se guardan como galería permanente. El backend gratuito de Render se suspende tras 15 minutos sin tráfico y puede tardar cerca de un minuto en despertar. Revisa las cuotas vigentes de Neon, Render y Google AI Studio antes de compartir el sitio.
+Neon PostgreSQL guarda usuarios, sesiones y los proyectos del garaje, incluidas las fotos y sus versiones. Configura `DATABASE_URL` en Render para que ese contenido persista y se comparta entre dispositivos. El backend gratuito de Render se suspende tras 15 minutos sin tráfico y puede tardar cerca de un minuto en despertar. Las imágenes consumen cuota de almacenamiento de la base de datos; revisa las cuotas vigentes de Neon, Render y Google AI Studio antes de compartir el sitio.
 
 Para despliegue manual, configura el backend con `pip install -r requirements.txt` y `uvicorn main:app --host 0.0.0.0 --port $PORT`; configura el frontend con `npm ci && npm run build` y publica `dist`.
 
